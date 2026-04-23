@@ -1,0 +1,74 @@
+version: '3.9'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nafaa_app
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - .:/var/www/html
+      - ./storage:/var/www/html/storage
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mysql
+      - redis
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+    networks:
+      - nafaa_network
+
+  mysql:
+    image: mysql:8.0
+    container_name: nafaa_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: nafaa_erp
+      MYSQL_USER: nafaa
+      MYSQL_PASSWORD: secret
+      MYSQL_ROOT_PASSWORD: rootsecret
+    ports:
+      - "3307:3306"
+    volumes:
+      - nafaa_mysql_data:/var/lib/mysql
+    networks:
+      - nafaa_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: nafaa_redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - nafaa_redis_data:/data
+    networks:
+      - nafaa_network
+
+  horizon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nafaa_horizon
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - .:/var/www/html
+    command: php artisan horizon
+    depends_on:
+      - mysql
+      - redis
+    networks:
+      - nafaa_network
+
+volumes:
+  nafaa_mysql_data:
+  nafaa_redis_data:
+
+networks:
+  nafaa_network:
+    driver: bridge
