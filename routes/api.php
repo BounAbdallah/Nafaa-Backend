@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\Auth\PasswordResetController;
 use App\Http\Controllers\Api\V1\Customers\CustomerController;
 use App\Http\Controllers\Api\V1\Expenses\ExpenseController;
 use App\Http\Controllers\Api\V1\Products\ProductController;
+use App\Http\Controllers\Api\V1\Dashboard\DashboardController;
 use App\Http\Controllers\Api\V1\Suppliers\PurchaseOrderController;
 use App\Http\Controllers\Api\V1\Suppliers\SupplierController;
 use App\Http\Controllers\Api\V1\Team\TeamController;
@@ -70,6 +71,9 @@ Route::prefix('v1')->group(function () {
 
         // ─── Tenant-scoped routes (require tenant + verified) ─────────────
         Route::middleware(['tenant', 'verified'])->group(function () {
+
+            // Dashboard
+            Route::get('/dashboard', [DashboardController::class, 'index']);
 
             // Équipe
             Route::prefix('team')->group(function () {
