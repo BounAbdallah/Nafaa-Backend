@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\Suppliers\PurchaseOrderController;
 use App\Http\Controllers\Api\V1\Suppliers\SupplierController;
 use App\Http\Controllers\Api\V1\Team\TeamController;
 use App\Http\Controllers\Api\V1\Tenant\TenantController;
+use App\Http\Controllers\Api\V1\Reports\ReportController;
 use App\Http\Controllers\Api\V1\OrderController;
 use Illuminate\Support\Facades\Route;
 
@@ -25,14 +26,11 @@ Route::prefix('v1')->group(function () {
 
     // ─── Public auth routes ───────────────────────────────────────────────
     Route::prefix('auth')->group(function () {
-        Route::post('/register',        [AuthController::class, 'register']);
-        Route::post('/login',           [AuthController::class, 'login']);
-        Route::post('/forgot-password', [PasswordResetController::class, 'forgotPassword']);
-        Route::post('/reset-password',  [PasswordResetController::class, 'resetPassword']);
+        Route::post('/register',        [AuthController::class, 'register'])->middleware('throttle:10,1');
+        Route::post('/login',           [AuthController::class, 'login'])->middleware('throttle:5,1');
+        Route::post('/forgot-password', [PasswordResetController::class, 'forgotPassword'])->middleware('throttle:5,1');
+        Route::post('/reset-password',  [PasswordResetController::class, 'resetPassword'])->middleware('throttle:5,1');
     });
-
-    // Facture accessible via token query string (authentification manuelle)
-    Route::get('orders/{order}/invoice', [OrderController::class, 'downloadInvoice']);
 
     // ─── Utility routes ───────────────────────────────────────────────────
     Route::get('/tenants/industries', [TenantController::class, 'industries']);
@@ -137,11 +135,19 @@ Route::prefix('v1')->group(function () {
 
             // Commandes Clients (POS & Standard)
             Route::prefix('orders')->group(function () {
-                Route::get('/meta',        [OrderController::class, 'meta']);
-                Route::get('/',            [OrderController::class, 'index']);
-                Route::post('/',           [OrderController::class, 'store']);
-                Route::get('/{order}',     [OrderController::class, 'show']);
-                Route::delete('/{order}',  [OrderController::class, 'destroy']);
+                Route::get('/meta',               [OrderController::class, 'meta']);
+                Route::get('/',                   [OrderController::class, 'index']);
+                Route::post('/',                  [OrderController::class, 'store']);
+                Route::get('/{order}',            [OrderController::class, 'show']);
+                Route::delete('/{order}',         [OrderController::class, 'destroy']);
+                Route::get('/{order}/invoice',    [OrderController::class, 'downloadInvoice']);
+            });
+
+            // Rapports
+            Route::prefix('reports')->group(function () {
+                Route::get('/sales',      [ReportController::class, 'dailySummary']);
+                Route::get('/finance',    [ReportController::class, 'financialSummary']);
+                Route::get('/inventory',  [ReportController::class, 'inventoryValuation']);
             });
 
         });
