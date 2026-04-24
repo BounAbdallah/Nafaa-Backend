@@ -19,14 +19,15 @@ class ReportController extends Controller
     public function dailySummary(Request $request): JsonResponse
     {
         $tenantId = $request->user()->tenant_id;
-        $date = $request->query('date', Carbon::today()->toDateString());
+        $startDate = $request->query('start_date', Carbon::today()->toDateString());
+        $endDate = $request->query('end_date', Carbon::today()->toDateString());
         
-        $startOfDay = Carbon::parse($date)->startOfDay();
-        $endOfDay = Carbon::parse($date)->endOfDay();
+        $start = Carbon::parse($startDate)->startOfDay();
+        $end = Carbon::parse($endDate)->endOfDay();
 
         $orders = Order::where('tenant_id', $tenantId)
             ->where('status', '!=', 'cancelled')
-            ->whereBetween('created_at', [$startOfDay, $endOfDay])
+            ->whereBetween('created_at', [$start, $end])
             ->get();
 
         $totalSales = $orders->sum('total_amount');
@@ -46,7 +47,7 @@ class ReportController extends Controller
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->where('orders.tenant_id', $tenantId)
             ->where('orders.status', '!=', 'cancelled')
-            ->whereBetween('orders.created_at', [$startOfDay, $endOfDay])
+            ->whereBetween('orders.created_at', [$start, $end])
             ->select('products.name', DB::raw('SUM(order_items.quantity) as total_qty'), DB::raw('SUM(order_items.subtotal) as total_revenue'))
             ->groupBy('products.id', 'products.name')
             ->orderByDesc('total_qty')
@@ -56,7 +57,8 @@ class ReportController extends Controller
         return response()->json([
             'success' => true,
             'data' => [
-                'date' => $date,
+                'start_date' => $startDate,
+                'end_date' => $endDate,
                 'total_sales' => $totalSales,
                 'total_discount' => $totalDiscount,
                 'orders_count' => $ordersCount,
@@ -72,10 +74,13 @@ class ReportController extends Controller
     public function financialSummary(Request $request): JsonResponse
     {
         $tenantId = $request->user()->tenant_id;
-        $period = $request->query('period', 'month'); // week, month, year
+        $period = $request->query('period', 'month'); // custom, week, month, year
         
         $now = Carbon::now();
-        if ($period === 'week') {
+        if ($period === 'custom') {
+            $startDate = $request->query('start_date', $now->startOfMonth()->toDateString());
+            $endDate = $request->query('end_date', $now->endOfMonth()->toDateString());
+        } elseif ($period === 'week') {
             $startDate = $now->startOfWeek()->toDateString();
             $endDate = $now->endOfWeek()->toDateString();
         } elseif ($period === 'year') {
@@ -184,6 +189,71 @@ class ReportController extends Controller
                 'total_cost' => $totalCost,
                 'potential_profit' => $totalValuation - $totalCost,
                 'details' => $inventoryDetails,
+            ]
+        ]);
+    }
+
+    /**
+     * Rapport de Performance Équipe
+     */
+    public function teamPerformance(Request $request): JsonResponse
+    {
+        $tenantId = $request->user()->tenant_id;
+        $startDate = $request->query('start_date', Carbon::now()->startOfMonth()->toDateString());
+        $endDate = $request->query('end_date', Carbon::now()->endOfMonth()->toDateString());
+
+        $start = Carbon::parse($startDate)->startOfDay();
+        $end = Carbon::parse($endDate)->endOfDay();
+
+        $performance = DB::table('orders')
+            ->join('users', 'orders.user_id', '=', 'users.id')
+            ->where('orders.tenant_id', $tenantId)
+            ->where('orders.status', '!=', 'cancelled')
+            ->whereBetween('orders.created_at', [$start, $end])
+            ->select('users.id', 'users.name', DB::raw('SUM(orders.total_amount) as total_revenue'), DB::raw('COUNT(orders.id) as total_orders'))
+            ->groupBy('users.id', 'users.name')
+            ->orderByDesc('total_revenue')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'performance' => $performance,
+            ]
+        ]);
+    }
+
+    /**
+     * Rapport Analyse Clients
+     */
+    public function customerAnalytics(Request $request): JsonResponse
+    {
+        $tenantId = $request->user()->tenant_id;
+        $startDate = $request->query('start_date', Carbon::now()->startOfMonth()->toDateString());
+        $endDate = $request->query('end_date', Carbon::now()->endOfMonth()->toDateString());
+
+        $start = Carbon::parse($startDate)->startOfDay();
+        $end = Carbon::parse($endDate)->endOfDay();
+
+        $topCustomers = DB::table('orders')
+            ->join('customers', 'orders.customer_id', '=', 'customers.id')
+            ->where('orders.tenant_id', $tenantId)
+            ->where('orders.status', '!=', 'cancelled')
+            ->whereBetween('orders.created_at', [$start, $end])
+            ->select('customers.id', 'customers.name', 'customers.phone', DB::raw('SUM(orders.total_amount) as total_spent'), DB::raw('COUNT(orders.id) as total_orders'))
+            ->groupBy('customers.id', 'customers.name', 'customers.phone')
+            ->orderByDesc('total_spent')
+            ->limit(20)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'top_customers' => $topCustomers,
             ]
         ]);
     }

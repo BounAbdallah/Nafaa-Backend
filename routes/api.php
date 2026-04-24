@@ -148,6 +148,8 @@ Route::prefix('v1')->group(function () {
                 Route::get('/sales',      [ReportController::class, 'dailySummary']);
                 Route::get('/finance',    [ReportController::class, 'financialSummary']);
                 Route::get('/inventory',  [ReportController::class, 'inventoryValuation']);
+                Route::get('/team',       [ReportController::class, 'teamPerformance']);
+                Route::get('/customers',  [ReportController::class, 'customerAnalytics']);
             });
 
         });
