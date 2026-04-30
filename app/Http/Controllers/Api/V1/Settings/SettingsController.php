@@ -58,6 +58,11 @@ class SettingsController extends Controller
             'name'     => 'required|string|max:255',
             'industry' => 'required|string|max:100',
             'logo'     => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            'ninea'    => 'nullable|string|max:100',
+            'rc'       => 'nullable|string|max:100',
+            'address'  => 'nullable|string|max:255',
+            'phone'    => 'nullable|string|max:50',
+            'email'    => 'nullable|email|max:255',
         ]);
 
         if ($request->hasFile('logo')) {
@@ -70,6 +75,15 @@ class SettingsController extends Controller
 
         $tenant->name = $data['name'];
         $tenant->industry = $data['industry'];
+        
+        $settings = $tenant->settings ?? [];
+        $settings['ninea']   = $data['ninea'] ?? null;
+        $settings['rc']      = $data['rc'] ?? null;
+        $settings['address'] = $data['address'] ?? null;
+        $settings['phone']   = $data['phone'] ?? null;
+        $settings['email']   = $data['email'] ?? null;
+        $tenant->settings = $settings;
+
         $tenant->save();
 
         return response()->json([

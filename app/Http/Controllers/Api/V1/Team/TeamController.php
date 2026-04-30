@@ -73,11 +73,68 @@ class TeamController extends Controller
         $user->load('roles');
         $logs = $this->teamService->getActivityLogs($tenant, 10, $user->id);
 
+        $months = collect(range(5, 0))->map(function ($i) {
+            $date = now()->startOfMonth()->subMonths($i);
+            return [
+                'date_start' => $date->format('Y-m-d'),
+                'date_end'   => $date->copy()->endOfMonth()->format('Y-m-d'),
+                'label'      => $date->translatedFormat('M'),
+                'ventes'     => 0,
+            ];
+        });
+
+        $salesData = \Illuminate\Support\Facades\DB::table('orders')
+            ->where('user_id', $user->id)
+            ->where('tenant_id', $tenant->id)
+            ->where('status', '!=', 'cancelled')
+            ->selectRaw('DATE_FORMAT(created_at, "%Y-%m") as month, SUM(total_amount) as total')
+            ->groupBy('month')
+            ->get()
+            ->pluck('total', 'month');
+
+        $performance = $months->map(function ($m) use ($salesData) {
+            $monthKey = substr($m['date_start'], 0, 7);
+            return [
+                'name'   => $m['label'],
+                'Ventes' => (float)($salesData[$monthKey] ?? 0),
+            ];
+        });
+
+        // Lifetime stats
+        $totalSalesAmount = \Illuminate\Support\Facades\DB::table('orders')
+            ->where('user_id', $user->id)
+            ->where('tenant_id', $tenant->id)
+            ->where('status', '!=', 'cancelled')
+            ->sum('total_amount');
+
+        $totalOrdersCount = \Illuminate\Support\Facades\DB::table('orders')
+            ->where('user_id', $user->id)
+            ->where('tenant_id', $tenant->id)
+            ->where('status', '!=', 'cancelled')
+            ->count();
+
+        $totalPurchaseAmount = \Illuminate\Support\Facades\DB::table('purchase_orders')
+            ->where('user_id', $user->id)
+            ->where('tenant_id', $tenant->id)
+            ->where('status', '!=', 'cancelled')
+            ->sum('total_amount');
+
+        $totalExpensesAmount = \Illuminate\Support\Facades\DB::table('expenses')
+            ->where('user_id', $user->id)
+            ->where('tenant_id', $tenant->id)
+            ->sum('amount');
+
         return response()->json([
             'success' => true,
             'data'    => [
-                'member'   => new UserResource($user),
-                'activity' => $logs->map(fn ($log) => [
+                'member'         => new UserResource($user),
+                'performance'    => $performance,
+                'lifetime_stats' => [
+                    'total_sales'    => (float)$totalSalesAmount,
+                    'orders_count'   => $totalOrdersCount,
+                    'total_expenses' => (float)($totalPurchaseAmount + $totalExpensesAmount),
+                ],
+                'activity'       => $logs->map(fn ($log) => [
                     'id'         => $log->id,
                     'action'     => $log->action,
                     'properties' => $log->properties,

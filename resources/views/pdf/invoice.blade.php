@@ -128,14 +128,36 @@
 
     <div class="header">
         <div class="logo-section">
-            <div class="logo-text">QI<span class="logo-dot">W</span>AM</div>
-            <div class="logo-sub">ERP SAAS SYSTEM</div>
+            @if($order->tenant->logo && \Illuminate\Support\Facades\Storage::disk('public')->exists($order->tenant->logo))
+                @php
+                    $logoPath = \Illuminate\Support\Facades\Storage::disk('public')->path($order->tenant->logo);
+                    $logoData = base64_encode(file_get_contents($logoPath));
+                    $logoSrc = 'data:image/' . pathinfo($logoPath, PATHINFO_EXTENSION) . ';base64,' . $logoData;
+                @endphp
+                <img src="{{ $logoSrc }}" alt="Logo" style="max-height: 60px; max-width: 200px; margin-bottom: 10px;">
+            @else
+                <div class="logo-text">QI<span class="logo-dot">W</span>AM</div>
+                <div class="logo-sub">ERP</div>
+            @endif
             
             <div class="company-details">
                 <strong style="color: #0F1E30; font-size: 14px;">{{ $order->tenant->name }}</strong><br>
                 <span style="font-size: 10px;">
-                    Email: {{ $order->tenant->email ?? 'N/A' }}<br>
-                    Téléphone: {{ $order->tenant->phone ?? 'N/A' }}
+                    @if(!empty($order->tenant->settings['address']))
+                        {{ $order->tenant->settings['address'] }}<br>
+                    @endif
+                    @if(!empty($order->tenant->settings['email']))
+                        Email: {{ $order->tenant->settings['email'] }}<br>
+                    @endif
+                    @if(!empty($order->tenant->settings['phone']))
+                        Téléphone: {{ $order->tenant->settings['phone'] }}<br>
+                    @endif
+                    @if(!empty($order->tenant->settings['ninea']))
+                        NINEA: {{ $order->tenant->settings['ninea'] }}<br>
+                    @endif
+                    @if(!empty($order->tenant->settings['rc']))
+                        RC: {{ $order->tenant->settings['rc'] }}
+                    @endif
                 </span>
             </div>
         </div>
