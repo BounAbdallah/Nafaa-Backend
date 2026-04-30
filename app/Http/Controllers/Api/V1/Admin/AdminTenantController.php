@@ -14,6 +14,7 @@ class AdminTenantController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = Tenant::withoutGlobalScopes()
+            ->withCount('users')
             ->latest();
 
         if ($request->has('search')) {
@@ -44,24 +45,34 @@ class AdminTenantController extends Controller
         ]);
     }
 
-    public function updateProfile(Request $request, Tenant $tenant): JsonResponse
+    public function updateTenant(Request $request, Tenant $tenant): JsonResponse
     {
-        $request->validate([
-            'profile_type' => ['required', 'string', Rule::in([
+        $data = $request->validate([
+            'profile_type' => ['nullable', 'string', Rule::in([
                 Tenant::PROFILE_MANUFACTURER,
                 Tenant::PROFILE_RESELLER,
                 Tenant::PROFILE_WHOLESALER,
                 Tenant::PROFILE_SERVICE,
             ])],
+            'plan' => ['nullable', 'string', Rule::in([
+                Tenant::PLAN_DEMARRAGE,
+                Tenant::PLAN_PRO,
+                Tenant::PLAN_BUSINESS,
+                Tenant::PLAN_ENTREPRISE,
+            ])],
+            'is_active' => ['nullable', 'boolean'],
         ]);
 
-        $tenant->update([
-            'profile_type' => $request->profile_type,
-        ]);
+        $tenant->update(array_filter($data, function($val) { return $val !== null; }));
+
+        // If is_active is explicitly set to false/true, update it (array_filter removes false, so we need to handle it manually)
+        if ($request->has('is_active')) {
+            $tenant->update(['is_active' => $request->boolean('is_active')]);
+        }
 
         return response()->json([
             'success' => true,
-            'message' => 'Profil de l\'espace de travail mis à jour.',
+            'message' => 'Espace de travail mis à jour.',
             'data'    => ['tenant' => new TenantResource($tenant->fresh())],
         ]);
     }

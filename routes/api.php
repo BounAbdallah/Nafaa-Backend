@@ -68,7 +68,7 @@ Route::prefix('v1')->group(function () {
 
             // Gestion des espaces de travail (Tenants)
             Route::get('/tenants',                  [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'index']);
-            Route::patch('/tenants/{tenant}/profile', [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'updateProfile']);
+            Route::patch('/tenants/{tenant}',       [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'updateTenant']);
         });
 
         // ─── Tenant-scoped routes (require tenant + verified) ─────────────

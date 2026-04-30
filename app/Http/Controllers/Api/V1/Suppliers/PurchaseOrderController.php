@@ -18,7 +18,7 @@ class PurchaseOrderController extends Controller
     {
         $tenantId = $request->user()->tenant_id;
         $query    = PurchaseOrder::where('tenant_id', $tenantId)
-                        ->with(['supplier', 'items']);
+                        ->with(['supplier', 'items', 'user']);
 
         if ($request->filled('search')) {
             $s = $request->search;
@@ -98,7 +98,7 @@ class PurchaseOrderController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Bon de commande créé.',
-            'data'    => ['order' => new PurchaseOrderResource($order->load(['supplier', 'items.product']))],
+            'data'    => ['order' => new PurchaseOrderResource($order->load(['supplier', 'items.product', 'user']))],
         ], 201);
     }
 
@@ -107,7 +107,7 @@ class PurchaseOrderController extends Controller
         $this->authorizeTenant($request, $purchaseOrder);
         return response()->json([
             'success' => true,
-            'data'    => ['order' => new PurchaseOrderResource($purchaseOrder->load(['supplier', 'items.product']))],
+            'data'    => ['order' => new PurchaseOrderResource($purchaseOrder->load(['supplier', 'items.product', 'user']))],
         ]);
     }
 

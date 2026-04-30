@@ -21,6 +21,7 @@ class PurchaseOrderResource extends JsonResource
             'total_amount'   => $this->total_amount,
             'notes'          => $this->notes,
             'supplier'       => new SupplierResource($this->whenLoaded('supplier')),
+            'user'           => $this->whenLoaded('user', fn() => ['id' => $this->user->id, 'name' => $this->user->name]),
             'items'          => PurchaseOrderItemResource::collection($this->whenLoaded('items')),
             'items_count'    => $this->whenLoaded('items', fn() => $this->items->count(), 0),
             'created_at'     => $this->created_at->toIso8601String(),
