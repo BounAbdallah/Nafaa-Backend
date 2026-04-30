@@ -25,11 +25,12 @@ class ExpenseController extends Controller
         }
         if ($request->filled('category'))    $query->where('category', $request->category);
         if ($request->filled('month')) {
+            $request->validate(['month' => 'date_format:Y-m']);
             [$year, $month] = explode('-', $request->month);
             $query->whereYear('expense_date', $year)->whereMonth('expense_date', $month);
         }
 
-        $expenses = $query->orderByDesc('expense_date')->paginate($request->get('per_page', 20));
+        $expenses = $query->orderByDesc('expense_date')->paginate(min(100, $request->get('per_page', 20)));
 
         // Calcul du total pour la période affichée
         $totalQuery = Expense::where('tenant_id', $tenantId);

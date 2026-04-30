@@ -101,7 +101,7 @@ class TeamController extends Controller
     public function activity(Request $request): JsonResponse
     {
         $tenant = $request->user()->tenant;
-        $logs   = $this->teamService->getActivityLogs($tenant, $request->get('limit', 20));
+        $logs   = $this->teamService->getActivityLogs($tenant, min(100, $request->get('limit', 20)));
 
         return response()->json([
             'success' => true,

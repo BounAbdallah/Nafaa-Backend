@@ -65,6 +65,10 @@ Route::prefix('v1')->group(function () {
             Route::get('/users/{user}',            [AdminUserController::class, 'show']);
             Route::patch('/users/{user}/block',   [AdminUserController::class, 'block']);
             Route::patch('/users/{user}/unblock', [AdminUserController::class, 'unblock']);
+
+            // Gestion des espaces de travail (Tenants)
+            Route::get('/tenants',                  [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'index']);
+            Route::patch('/tenants/{tenant}/profile', [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'updateProfile']);
         });
 
         // ─── Tenant-scoped routes (require tenant + verified) ─────────────
@@ -89,9 +93,13 @@ Route::prefix('v1')->group(function () {
                 Route::get('/',          [ProductController::class, 'index']);
                 Route::post('/',         [ProductController::class, 'store']);
                 Route::get('/{product}', [ProductController::class, 'show']);
+                Route::get('/{product}/stats', [ProductController::class, 'stats']);
                 Route::match(['PUT', 'PATCH'], '/{product}', [ProductController::class, 'update']);
                 Route::delete('/{product}', [ProductController::class, 'destroy']);
             });
+
+            // Catégories
+            Route::apiResource('/categories', \App\Http\Controllers\Api\V1\Products\CategoryController::class);
 
             // Clients (CRM)
             Route::prefix('customers')->group(function () {
@@ -150,6 +158,12 @@ Route::prefix('v1')->group(function () {
                 Route::get('/inventory',  [ReportController::class, 'inventoryValuation']);
                 Route::get('/team',       [ReportController::class, 'teamPerformance']);
                 Route::get('/customers',  [ReportController::class, 'customerAnalytics']);
+            });
+
+            // Paramètres & Profil
+            Route::prefix('settings')->group(function () {
+                Route::put('/profile', [\App\Http\Controllers\Api\V1\Settings\SettingsController::class, 'updateProfile']);
+                Route::post('/tenant', [\App\Http\Controllers\Api\V1\Settings\SettingsController::class, 'updateTenant']); // POST because of FormData file upload
             });
 
         });

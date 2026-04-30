@@ -16,8 +16,16 @@ class ProductResource extends JsonResource
             'description'    => $this->description,
             'type'           => $this->type,
             'type_label'     => $this->type === 'service' ? 'Service' : 'Produit',
+            'category_id'    => $this->category_id,
+            'category_data'  => $this->category_id ? [
+                'id'    => $this->category_id,
+                'name'  => $this->category?->name,
+                'color' => $this->category?->color,
+            ] : null,
             'category'       => $this->category,
-            'category_label' => \App\Models\Product::categories()[$this->category] ?? $this->category,
+            'category_label' => $this->category_id 
+                ? $this->category?->name 
+                : (\App\Models\Product::categories()[$this->category] ?? $this->category),
             'unit'           => $this->unit,
             'selling_price'  => $this->selling_price,
             'cost_price'     => $this->cost_price,

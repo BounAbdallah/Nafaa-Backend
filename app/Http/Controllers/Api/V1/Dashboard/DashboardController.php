@@ -76,7 +76,7 @@ class DashboardController extends Controller
                 return [
                     'id' => $order->id,
                     'reference' => $order->reference,
-                    'customer_name' => $order->customer->name ?? 'Client de passage',
+                    'customer_name' => $order->customer?->name ?? 'Client de passage',
                     'total_amount' => $order->total_amount,
                     'status' => $order->status,
                     'created_at' => $order->created_at->toISOString(),

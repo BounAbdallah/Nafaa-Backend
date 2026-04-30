@@ -30,7 +30,7 @@ class OrderController extends Controller
             $query->where('status', $request->status);
         }
 
-        $orders = $query->paginate($request->per_page ?? 15);
+        $orders = $query->paginate(min(100, $request->per_page ?? 15));
 
         return response()->json([
             'orders' => $orders->items(),
@@ -66,8 +66,8 @@ class OrderController extends Controller
             $orderItemsData = [];
 
             foreach ($request->items as $item) {
-                $product = Product::where('tenant_id', $tenantId)->findOrFail($item['product_id']);
-                
+                $product = Product::where('tenant_id', $tenantId)->lockForUpdate()->findOrFail($item['product_id']);
+
                 if ($product->stock_quantity < $item['quantity']) {
                     throw new \Exception("Stock insuffisant pour le produit : {$product->name}");
                 }
@@ -155,10 +155,6 @@ class OrderController extends Controller
         $order = Order::where('tenant_id', $tenantId)->findOrFail($id);
 
         return DB::transaction(function () use ($order) {
-            // Re-créditer le stock si on annule ? 
-            // Pour l'instant on fait juste un soft delete ou on change le statut
-            $order->update(['status' => 'cancelled']);
-            
             foreach ($order->items as $item) {
                 if ($item->product_id) {
                     Product::where('id', $item->product_id)->increment('stock_quantity', $item->quantity);
@@ -173,38 +169,25 @@ class OrderController extends Controller
 
     public function downloadInvoice($id)
     {
-        $user = null;
-
-        // 1. Tenter l'auth par header (si l'appel vient d'un client API standard)
-        if (Auth::guard('sanctum')->check()) {
-            $user = Auth::guard('sanctum')->user();
-        } 
-        // 2. Tenter l'auth par token en query string (si clic browser)
-        elseif (request()->has('token')) {
-            $token = \Laravel\Sanctum\PersonalAccessToken::findToken(request()->token);
-            if ($token) {
-                $user = $token->tokenable;
-            }
-        }
-
-        if (!$user) {
-            return response()->json(['message' => 'Non authentifié.'], 401);
-        }
+        $user = Auth::user();
 
         $order = Order::where('tenant_id', $user->tenant_id)
             ->with(['items', 'payments', 'customer', 'tenant'])
             ->findOrFail($id);
 
         $pdf = Pdf::loadView('pdf.invoice', compact('order'));
-        
+
         return $pdf->download("facture-{$order->reference}.pdf");
     }
 
-    private function generateReference()
+    private function generateReference(): string
     {
         $date = now()->format('Ymd');
-        $random = strtoupper(Str::random(4));
-        return "ORD-{$date}-{$random}";
+        do {
+            $ref = 'ORD-' . $date . '-' . strtoupper(Str::random(5));
+        } while (Order::where('reference', $ref)->exists());
+
+        return $ref;
     }
 
     public function meta()
