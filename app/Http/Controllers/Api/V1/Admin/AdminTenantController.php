@@ -61,7 +61,20 @@ class AdminTenantController extends Controller
                 Tenant::PLAN_ENTREPRISE,
             ])],
             'is_active' => ['nullable', 'boolean'],
+            'settings'  => ['nullable', 'array'],
+            'pack_id'   => ['nullable', 'exists:packs,id'],
         ]);
+
+        if (isset($data['pack_id'])) {
+            $pack = \App\Models\Pack::find($data['pack_id']);
+            $data['plan'] = $pack->slug;
+            // Also apply pack features to tenant settings if needed
+            if ($pack->features) {
+                $currentSettings = $tenant->settings ?? [];
+                $currentSettings['enabled_modules'] = $pack->features;
+                $data['settings'] = $currentSettings;
+            }
+        }
 
         $tenant->update(array_filter($data, function($val) { return $val !== null; }));
 

@@ -27,13 +27,30 @@ class TenantService
                 'industry'     => $data['industry'],
                 'profile_type' => $data['profile_type'],
                 'plan'         => $data['plan'] ?? Tenant::PLAN_DEMARRAGE,
+                'pack_id'      => $data['pack_id'] ?? null,
                 'owner_id'     => $user->id,
-                'is_active'    => true,
+                'is_active'    => false, // Pending Super Admin approval
             ]);
+
+            if (isset($data['pack_id'])) {
+                $pack = \App\Models\Pack::find($data['pack_id']);
+                if ($pack) {
+                    $tenant->update(['plan' => $pack->slug]);
+                }
+            }
 
             $this->userRepository->update($user, ['tenant_id' => $tenant->id]);
 
             $this->assignTenantAdminRole($user, $tenant);
+
+            // Notify Super Admins
+            try {
+                $superAdmins = User::role('super_admin')->get();
+                \Illuminate\Support\Facades\Notification::send($superAdmins, new \App\Notifications\TenantCreatedNotification($tenant));
+            } catch (\Exception $e) {
+                // Silently fail if mailer/notifications are not configured correctly
+                \Illuminate\Support\Facades\Log::warning('Failed to notify super admins of new tenant: ' . $e->getMessage());
+            }
 
             return $tenant;
         });

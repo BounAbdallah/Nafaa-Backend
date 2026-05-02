@@ -1,6 +1,6 @@
 {
-    "name": "nafaa/erp-backend",
-    "description": "NAFAA ERP - Multi-tenant SaaS for SMEs in Francophone Africa",
+    "name": "qiwam/erp-backend",
+    "description": "Qiwam ERP - Multi-tenant SaaS for SMEs in Francophone Africa",
     "keywords": ["laravel", "erp", "saas", "multi-tenant", "africa"],
     "license": "MIT",
     "require": {

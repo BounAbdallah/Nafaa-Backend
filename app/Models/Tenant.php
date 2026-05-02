@@ -26,6 +26,7 @@ class Tenant extends Model
         'pm_last_four',
         'trial_ends_at',
         'owner_id',
+        'pack_id',
     ];
 
     protected $casts = [
@@ -71,6 +72,11 @@ class Tenant extends Model
         'other'         => 'Autre',
     ];
 
+    public function pack(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Pack::class);
+    }
+
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
@@ -97,6 +103,10 @@ class Tenant extends Model
 
     public function getPlanLimits(): array
     {
+        if ($this->pack) {
+            return $this->pack->limits;
+        }
+
         return match ($this->plan) {
             self::PLAN_DEMARRAGE  => ['users' => 2,  'products' => 50,   'storage_gb' => 1],
             self::PLAN_PRO        => ['users' => 10, 'products' => 500,  'storage_gb' => 10],

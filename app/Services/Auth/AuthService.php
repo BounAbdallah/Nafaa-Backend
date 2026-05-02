@@ -52,10 +52,25 @@ class AuthService
             ]);
         }
 
+        if ($user->tenant && ! $user->tenant->is_active) {
+            throw ValidationException::withMessages([
+                'email' => ["Votre espace de travail est en attente d'approbation ou a été désactivé. Veuillez patienter ou contacter le support."],
+            ]);
+        }
+
         $user->tokens()->delete();
         $token = $user->createToken('nafaa-auth-token')->plainTextToken;
 
         $this->userRepository->updateLastLogin($user);
+
+        \App\Models\ActivityLog::record(
+            $user->tenant_id ?? 0,
+            'login',
+            $user->id,
+            null,
+            [],
+            request()->ip()
+        );
 
         return [
             'user'  => $user->fresh(['tenant', 'roles']),

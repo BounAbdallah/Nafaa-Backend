@@ -8,12 +8,17 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
+use App\Models\Tenant;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+
 class AdminUserController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
         $query = User::with(['tenant', 'roles'])
             ->withoutGlobalScopes()
+            ->role('admin') // Only show shop administrators
             ->latest();
 
         if ($request->has('search')) {
@@ -30,6 +35,13 @@ class AdminUserController extends Controller
 
         if ($request->has('tenant_id')) {
             $query->where('tenant_id', $request->tenant_id);
+        }
+
+        if ($request->has('tenant_status')) {
+            $status = $request->tenant_status === 'active';
+            $query->whereHas('tenant', function($q) use ($status) {
+                $q->withoutGlobalScopes()->where('is_active', $status);
+            });
         }
 
         $users = $query->paginate($request->get('per_page', 20));
@@ -52,9 +64,18 @@ class AdminUserController extends Controller
     {
         $user->loadMissing(['tenant', 'roles']);
 
+        $logs = \App\Models\ActivityLog::where('user_id', $user->id)
+            ->where('action', 'login')
+            ->latest()
+            ->limit(10)
+            ->get();
+
         return response()->json([
             'success' => true,
-            'data'    => ['user' => new UserResource($user)],
+            'data'    => [
+                'user' => new UserResource($user),
+                'logs' => $logs,
+            ],
         ]);
     }
 
@@ -76,6 +97,11 @@ class AdminUserController extends Controller
             'block_reason' => $request->reason,
         ]);
 
+        // If the user is the owner of their tenant, block the tenant too
+        if ($user->tenant && $user->tenant->owner_id === $user->id) {
+            $user->tenant->update(['is_active' => false]);
+        }
+
         $user->tokens()->delete();
 
         return response()->json([
@@ -92,6 +118,11 @@ class AdminUserController extends Controller
             'block_reason' => null,
         ]);
 
+        // If the user is the owner of their tenant, unblock the tenant too
+        if ($user->tenant && $user->tenant->owner_id === $user->id) {
+            $user->tenant->update(['is_active' => true]);
+        }
+
         return response()->json([
             'success' => true,
             'message' => "L'utilisateur {$user->name} a été débloqué.",
@@ -101,12 +132,39 @@ class AdminUserController extends Controller
 
     public function stats(): JsonResponse
     {
+        // 1. Basic Stats
+        $totalTenants = Tenant::withoutGlobalScopes()->count();
+        $totalUsers   = User::withoutGlobalScopes()->count();
+        
+        // 2. DB Size Mock (based on records)
+        // In a real app, you might query INFORMATION_SCHEMA or use a library
+        $mockDbSize = ($totalTenants * 1.2) + ($totalUsers * 0.05) + 15.4; // MB
+        
+        // 3. Tenants by Industry
+        $tenantsByType = Tenant::withoutGlobalScopes()
+            ->select('industry', DB::raw('count(*) as count'))
+            ->groupBy('industry')
+            ->get()
+            ->mapWithKeys(fn ($item) => [$item->industry => $item->count]);
+
+        // 4. Registration Graph Data (Last 30 days)
+        $registrations = Tenant::withoutGlobalScopes()
+            ->where('created_at', '>=', now()->subDays(30))
+            ->select(DB::raw('DATE(created_at) as date'), DB::raw('count(*) as count'))
+            ->groupBy('date')
+            ->orderBy('date')
+            ->get();
+
         $stats = [
-            'total_users'   => User::withoutGlobalScopes()->count(),
-            'active_users'  => User::withoutGlobalScopes()->where('is_active', true)->count(),
-            'blocked_users' => User::withoutGlobalScopes()->where('is_active', false)->count(),
-            'unverified'    => User::withoutGlobalScopes()->whereNull('email_verified_at')->count(),
-            'super_admins'  => User::withoutGlobalScopes()->role('super_admin')->count(),
+            'total_users'    => $totalUsers,
+            'active_users'   => User::withoutGlobalScopes()->where('is_active', true)->count(),
+            'blocked_users'  => User::withoutGlobalScopes()->where('is_active', false)->count(),
+            'total_tenants'     => $totalTenants,
+            'pending_approvals' => Tenant::withoutGlobalScopes()->where('is_active', false)->count(),
+            'db_size_mb'        => round($mockDbSize, 2),
+            'tenants_by_type'   => $tenantsByType,
+            'graph_data'        => $registrations,
+            'super_admins'      => User::withoutGlobalScopes()->role('super_admin')->count(),
         ];
 
         return response()->json([

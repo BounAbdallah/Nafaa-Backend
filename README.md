@@ -1,6 +1,6 @@
-# Nafaa ERP - Backend 🚀
+# Qiwam ERP - Backend 🚀
 
-Le moteur central de **Nafaa ERP**, une solution de gestion d'entreprise multi-tenant conçue pour la performance et la scalabilité. Construit avec **Laravel 12** et **PHP 8.3**.
+Le moteur central de **Qiwam ERP**, une solution de gestion d'entreprise multi-tenant conçue pour la performance et la scalabilité. Construit avec **Laravel 12** et **PHP 8.3**.
 
 ## 🌟 Points Forts
 - **Architecture Multi-tenant** : Isolation totale des données pour chaque entreprise cliente.
@@ -49,4 +49,4 @@ Le moteur central de **Nafaa ERP**, une solution de gestion d'entreprise multi-t
 - `resources/views/pdf` : Templates Blade pour les factures.
 
 ---
-© 2026 Nafaa ERP.
+© 2026 Qiwam ERP.

@@ -28,6 +28,16 @@ class ProductionController extends Controller
         ]);
     }
 
+    public function show(Request $request, Production $production): JsonResponse
+    {
+        $this->authorizeTenant($request, $production);
+        
+        return response()->json([
+            'success' => true,
+            'data' => $production->load(['product', 'bom.items.ingredient', 'user'])
+        ]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $tenantId = $request->user()->tenant_id;
@@ -203,6 +213,20 @@ class ProductionController extends Controller
                 'details' => $availability
             ]
         ]);
+    }
+
+    public function downloadReport(Request $request, Production $production)
+    {
+        $this->authorizeTenant($request, $production);
+        
+        $production->load(['product', 'bom.items.ingredient', 'user']);
+        
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdfs.production-report', [
+            'production' => $production,
+            'tenant' => $request->user()->tenant
+        ]);
+
+        return $pdf->download("Rapport_Production_{$production->reference}.pdf");
     }
 
     private function authorizeTenant(Request $request, $model): void

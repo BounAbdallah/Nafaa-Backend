@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| NAFAA API Routes — v1
+| Qiwam API Routes — v1
 |--------------------------------------------------------------------------
 */
 
@@ -36,6 +36,7 @@ Route::prefix('v1')->group(function () {
 
     // ─── Utility routes ───────────────────────────────────────────────────
     Route::get('/tenants/industries', [TenantController::class, 'industries']);
+    Route::get('/packs', [\App\Http\Controllers\Api\V1\Admin\PackController::class, 'index']);
 
     // ─── Authenticated routes ─────────────────────────────────────────────
     Route::middleware(['auth:sanctum'])->group(function () {
@@ -71,6 +72,9 @@ Route::prefix('v1')->group(function () {
             // Gestion des espaces de travail (Tenants)
             Route::get('/tenants',                  [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'index']);
             Route::patch('/tenants/{tenant}',       [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'updateTenant']);
+
+            // Gestion des Packs
+            Route::apiResource('/packs', \App\Http\Controllers\Api\V1\Admin\PackController::class);
         });
 
         // ─── Tenant-scoped routes (require tenant + verified) ─────────────
@@ -171,10 +175,12 @@ Route::prefix('v1')->group(function () {
                 // Fabrications (Productions)
                 Route::get('/',                 [ProductionController::class, 'index']);
                 Route::post('/',                [ProductionController::class, 'store']);
+                Route::get('/{production}',      [ProductionController::class, 'show']);
                 Route::post('/check-availability', [ProductionController::class, 'checkAvailability']);
                 Route::post('/{production}/start', [ProductionController::class, 'start']);
                 Route::post('/{production}/complete', [ProductionController::class, 'complete']);
                 Route::post('/{production}/cancel', [ProductionController::class, 'cancel']);
+                Route::get('/{production}/report', [ProductionController::class, 'downloadReport']);
             });
 
             // Paramètres & Profil

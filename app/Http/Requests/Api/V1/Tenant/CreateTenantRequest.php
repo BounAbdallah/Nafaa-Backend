@@ -31,6 +31,7 @@ class CreateTenantRequest extends FormRequest
                 Tenant::PLAN_BUSINESS,
                 Tenant::PLAN_ENTREPRISE,
             ])],
+            'pack_id'      => ['nullable', 'exists:packs,id'],
         ];
     }
 

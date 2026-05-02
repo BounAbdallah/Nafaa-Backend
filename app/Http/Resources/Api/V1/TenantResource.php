@@ -17,6 +17,7 @@ class TenantResource extends JsonResource
             'industry_label'  => \App\Models\Tenant::INDUSTRIES[$this->industry] ?? $this->industry,
             'profile_type'    => $this->profile_type,
             'plan'            => $this->plan,
+            'pack_id'         => $this->pack_id,
             'plan_limits'     => $this->getPlanLimits(),
             'logo'            => $this->logo,
             'is_active'       => $this->is_active,
@@ -26,6 +27,7 @@ class TenantResource extends JsonResource
             'db_size'         => number_format(($this->id * 3.4) + 12, 1) . ' MB',
             'plan_expires_at' => $this->plan_expires_at?->toIso8601String(),
             'trial_ends_at'   => $this->trial_ends_at?->toIso8601String(),
+            'settings'        => $this->settings ?? ['enabled_modules' => ['sales', 'production', 'crm', 'inventory', 'finance']],
             'created_at'      => $this->created_at->toIso8601String(),
         ];
     }
