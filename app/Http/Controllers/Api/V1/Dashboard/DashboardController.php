@@ -69,7 +69,7 @@ class DashboardController extends Controller
 
         // 4. Produits en stock bas
         $lowStockCount = Product::where('tenant_id', $tenantId)
-            ->where('type', 'product')
+            ->whereIn('type', ['product', 'material'])
             ->whereColumn('stock_quantity', '<=', 'stock_alert')
             ->count();
 

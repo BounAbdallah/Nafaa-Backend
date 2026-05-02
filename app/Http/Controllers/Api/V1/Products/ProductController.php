@@ -21,13 +21,14 @@ class ProductController extends Controller
             $s = $request->search;
             $query->where(fn($q) => $q->where('name', 'like', "%$s%")->orWhere('sku', 'like', "%$s%"));
         }
-        if ($request->filled('type'))     $query->where('type', $request->type);
+        if ($request->filled('type'))         $query->where('type', $request->type);
+        if ($request->filled('exclude_type')) $query->where('type', '!=', $request->exclude_type);
         if ($request->filled('category')) {
             $query->where(fn($q) => $q->where('category', $request->category)->orWhere('category_id', $request->category));
         }
         if ($request->filled('active'))   $query->where('is_active', $request->boolean('active'));
         if ($request->boolean('low_stock')) {
-            $query->whereRaw('stock_quantity <= stock_alert')->where('type', 'product');
+            $query->whereRaw('stock_quantity <= stock_alert')->whereIn('type', ['product', 'material']);
         }
 
         $sortMap = ['name' => 'name', 'price' => 'selling_price', 'stock' => 'stock_quantity', 'date' => 'created_at'];
@@ -59,7 +60,7 @@ class ProductController extends Controller
             'sku'            => ['nullable', 'string', 'max:100',
                                   Rule::unique('products')->where('tenant_id', $request->user()->tenant_id)],
             'description'    => 'nullable|string',
-            'type'           => ['required', Rule::in(['product', 'service'])],
+            'type'           => ['required', Rule::in(['product', 'service', 'material'])],
             'category'       => ['nullable', Rule::in(array_keys(Product::categories()))],
             'category_id'    => [
                 'nullable', 'integer',
@@ -111,7 +112,7 @@ class ProductController extends Controller
             'sku'            => ['nullable', 'string', 'max:100',
                                   Rule::unique('products')->where('tenant_id', $request->user()->tenant_id)->ignore($product->id)],
             'description'    => 'nullable|string',
-            'type'           => ['sometimes', Rule::in(['product', 'service'])],
+            'type'           => ['sometimes', Rule::in(['product', 'service', 'material'])],
             'category'       => ['nullable', Rule::in(array_keys(Product::categories()))],
             'category_id'    => [
                 'nullable', 'integer',

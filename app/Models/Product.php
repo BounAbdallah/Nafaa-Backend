@@ -35,9 +35,19 @@ class Product extends Model
         return $this->belongsTo(Category::class);
     }
 
+    public function boms(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Bom::class);
+    }
+
     public function isLowStock(): bool
     {
-        return $this->type === 'product' && $this->stock_quantity <= $this->stock_alert;
+        return in_array($this->type, ['product', 'material']) && $this->stock_quantity <= $this->stock_alert;
+    }
+
+    public function isMaterial(): bool
+    {
+        return $this->type === 'material';
     }
 
     public function getMarginAttribute(): float

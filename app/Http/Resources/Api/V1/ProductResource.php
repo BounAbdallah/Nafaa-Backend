@@ -15,7 +15,7 @@ class ProductResource extends JsonResource
             'sku'            => $this->sku,
             'description'    => $this->description,
             'type'           => $this->type,
-            'type_label'     => $this->type === 'service' ? 'Service' : 'Produit',
+            'type_label'     => $this->type === 'service' ? 'Service' : ($this->type === 'material' ? 'Matière Première' : 'Produit'),
             'category_id'    => $this->category_id,
             'category_data'  => $this->category_id ? [
                 'id'    => $this->category_id,

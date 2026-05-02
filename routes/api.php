@@ -14,6 +14,8 @@ use App\Http\Controllers\Api\V1\Team\TeamController;
 use App\Http\Controllers\Api\V1\Tenant\TenantController;
 use App\Http\Controllers\Api\V1\Reports\ReportController;
 use App\Http\Controllers\Api\V1\OrderController;
+use App\Http\Controllers\Api\V1\Production\BomController;
+use App\Http\Controllers\Api\V1\Production\ProductionController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -158,6 +160,21 @@ Route::prefix('v1')->group(function () {
                 Route::get('/inventory',  [ReportController::class, 'inventoryValuation']);
                 Route::get('/team',       [ReportController::class, 'teamPerformance']);
                 Route::get('/customers',  [ReportController::class, 'customerAnalytics']);
+            });
+
+            // ─── Production & BOM ─────────────────────────────────────────────
+            Route::prefix('production')->group(function () {
+                // Recettes (BOM)
+                Route::get('/boms/meta',        [BomController::class, 'getMeta']);
+                Route::apiResource('/boms',      BomController::class);
+
+                // Fabrications (Productions)
+                Route::get('/',                 [ProductionController::class, 'index']);
+                Route::post('/',                [ProductionController::class, 'store']);
+                Route::post('/check-availability', [ProductionController::class, 'checkAvailability']);
+                Route::post('/{production}/start', [ProductionController::class, 'start']);
+                Route::post('/{production}/complete', [ProductionController::class, 'complete']);
+                Route::post('/{production}/cancel', [ProductionController::class, 'cancel']);
             });
 
             // Paramètres & Profil
