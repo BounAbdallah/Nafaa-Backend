@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\V1\Reports\ReportController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\Production\BomController;
 use App\Http\Controllers\Api\V1\Production\ProductionController;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -25,6 +26,24 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::prefix('v1')->group(function () {
+    
+    // ─── EMERGENCY UTILS (Temporary) ──────────────────────────────────────
+    Route::get('/debug/migrate', function() {
+        try {
+            Artisan::call('migrate', ['--force' => true]);
+            return response()->json(['success' => true, 'output' => Artisan::output()]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    });
+
+    Route::get('/debug/make-me-super-admin', function(\Illuminate\Http\Request $request) {
+        $user = $request->user();
+        if (!$user) return response()->json(['success' => false, 'message' => 'Non connecté.'], 401);
+        
+        $user->assignRole('super_admin');
+        return response()->json(['success' => true, 'message' => "Vous êtes maintenant Super Admin."]);
+    })->middleware('auth:sanctum');
 
     // ─── Public auth routes ───────────────────────────────────────────────
     Route::prefix('auth')->group(function () {
@@ -50,6 +69,11 @@ Route::prefix('v1')->group(function () {
                 ->name('verification.verify');
             Route::post('/email/resend', [EmailVerificationController::class, 'resend'])
                 ->middleware('throttle:6,1');
+
+            // Notifications (Shared)
+            Route::get('/notifications', [\App\Http\Controllers\Api\V1\Admin\NotificationController::class, 'index']);
+            Route::post('/notifications/mark-all-read', [\App\Http\Controllers\Api\V1\Admin\NotificationController::class, 'markAllRead']);
+            Route::patch('/notifications/{id}/read', [\App\Http\Controllers\Api\V1\Admin\NotificationController::class, 'markAsRead']);
         });
 
         // Tenant onboarding
@@ -75,6 +99,27 @@ Route::prefix('v1')->group(function () {
 
             // Gestion des Packs
             Route::apiResource('/packs', \App\Http\Controllers\Api\V1\Admin\PackController::class);
+
+            // Gestion des Abonnements & Monitoring
+            Route::prefix('subscriptions')->group(function () {
+                $c = \App\Http\Controllers\Api\V1\Admin\AdminSubscriptionController::class;
+                Route::get('/pending',         [$c, 'pendingApprovals']);
+                Route::post('/{tenant}/approve', [$c, 'approve']);
+                Route::get('/stats',           [$c, 'stats']);
+                Route::get('/tracking',        [$c, 'tracking']);
+                Route::get('/{tenant}/history', [$c, 'history']);
+                Route::post('/{tenant}/payment', [$c, 'recordPayment']);
+            });
+
+            // Journal d'activité plateforme
+            Route::get('/activity-logs', function() {
+                return response()->json([
+                    'success' => true,
+                    'logs' => \App\Models\ActivityLog::with(['user', 'tenant'])
+                        ->orderBy('created_at', 'desc')
+                        ->paginate(50)
+                ]);
+            });
         });
 
         // ─── Tenant-scoped routes (require tenant + verified) ─────────────
@@ -92,6 +137,10 @@ Route::prefix('v1')->group(function () {
                 Route::delete('/members/{user}',      [TeamController::class, 'remove']);
                 Route::get('/activity',               [TeamController::class, 'activity']);
             });
+
+            // Rapports PDF (Exportation)
+            Route::get('/reports/expenses/pdf',   [ReportController::class, 'exportExpensesPdf']);
+            Route::get('/reports/production/pdf', [ReportController::class, 'exportProductionPdf']);
 
             // Produits & Services
             Route::prefix('products')->group(function () {

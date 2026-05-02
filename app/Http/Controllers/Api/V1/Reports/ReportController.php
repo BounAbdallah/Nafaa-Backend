@@ -11,8 +11,67 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
+use App\Models\Production;
+use Barryvdh\DomPDF\Facade\Pdf;
+
 class ReportController extends Controller
 {
+    public function exportExpensesPdf(Request $request)
+    {
+        $startDate = $request->query('start_date');
+        $endDate = $request->query('end_date');
+        $tenantId = $request->user()->tenant_id;
+
+        $query = Expense::where('tenant_id', $tenantId);
+
+        if ($startDate && $endDate) {
+            $query->whereBetween('expense_date', [$startDate, $endDate]);
+        }
+
+        $expenses = $query->orderBy('expense_date', 'desc')->get();
+        $total = $expenses->sum('amount');
+
+        $pdf = Pdf::loadView('pdf.expenses', [
+            'expenses' => $expenses,
+            'total' => $total,
+            'startDate' => $startDate,
+            'endDate' => $endDate,
+            'tenant' => $request->user()->tenant
+        ]);
+
+        return $pdf->download('rapport-depenses.pdf');
+    }
+
+    public function exportProductionPdf(Request $request)
+    {
+        $startDate = $request->query('start_date');
+        $endDate = $request->query('end_date');
+        $tenantId = $request->user()->tenant_id;
+
+        $query = Production::where('tenant_id', $tenantId);
+
+        if ($startDate && $endDate) {
+            if (strlen($startDate) > 10) {
+                $query->whereBetween('created_at', [$startDate, $endDate]);
+            } else {
+                $query->whereBetween('created_at', [
+                    Carbon::parse($startDate)->startOfDay(),
+                    Carbon::parse($endDate)->endOfDay()
+                ]);
+            }
+        }
+
+        $productions = $query->with(['product', 'user'])->orderBy('created_at', 'desc')->get();
+
+        $pdf = Pdf::loadView('pdf.production', [
+            'productions' => $productions,
+            'startDate' => $startDate,
+            'endDate' => $endDate,
+            'tenant' => $request->user()->tenant
+        ]);
+
+        return $pdf->download('rapport-production.pdf');
+    }
     /**
      * Clôture de journée : Ventes, paiements, etc.
      */
