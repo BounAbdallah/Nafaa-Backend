@@ -30,6 +30,14 @@ class ExpenseController extends Controller
             $query->whereYear('expense_date', $year)->whereMonth('expense_date', $month);
         }
 
+        if ($request->filled('start_date')) {
+            $query->whereDate('expense_date', '>=', $request->start_date);
+        }
+
+        if ($request->filled('end_date')) {
+            $query->whereDate('expense_date', '<=', $request->end_date);
+        }
+
         $expenses = $query->orderByDesc('expense_date')->paginate(min(100, $request->get('per_page', 20)));
 
         // Calcul du total pour la période affichée
@@ -37,6 +45,12 @@ class ExpenseController extends Controller
         if ($request->filled('month')) {
             [$year, $month] = explode('-', $request->month);
             $totalQuery->whereYear('expense_date', $year)->whereMonth('expense_date', $month);
+        }
+        if ($request->filled('start_date')) {
+            $totalQuery->whereDate('expense_date', '>=', $request->start_date);
+        }
+        if ($request->filled('end_date')) {
+            $totalQuery->whereDate('expense_date', '<=', $request->end_date);
         }
         $periodTotal = $totalQuery->sum('amount');
 

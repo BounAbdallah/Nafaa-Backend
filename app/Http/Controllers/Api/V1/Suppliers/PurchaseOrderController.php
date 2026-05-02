@@ -30,6 +30,14 @@ class PurchaseOrderController extends Controller
         if ($request->filled('status'))      $query->where('status', $request->status);
         if ($request->filled('supplier_id')) $query->where('supplier_id', $request->supplier_id);
 
+        if ($request->filled('start_date')) {
+            $query->whereDate('order_date', '>=', $request->start_date);
+        }
+
+        if ($request->filled('end_date')) {
+            $query->whereDate('order_date', '<=', $request->end_date);
+        }
+
         $orders = $query->orderByDesc('order_date')->paginate($request->get('per_page', 20));
 
         return response()->json([
