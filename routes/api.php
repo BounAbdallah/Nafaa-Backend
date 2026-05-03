@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\V1\Reports\ReportController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\Production\BomController;
 use App\Http\Controllers\Api\V1\Production\ProductionController;
+use App\Http\Controllers\Api\V1\Ai\AiController;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 
@@ -127,6 +128,13 @@ Route::prefix('v1')->group(function () {
 
             // Dashboard
             Route::get('/dashboard', [DashboardController::class, 'index']);
+
+            // ─── AI Assistant (Qiwam Intelligent) ──────────────────────────
+            Route::prefix('ai')->group(function () {
+                Route::get( '/tools', [AiController::class, 'tools']);
+                Route::post('/text',  [AiController::class, 'text']);
+                Route::post('/voice', [AiController::class, 'voice']);
+            });
 
             // Équipe
             Route::prefix('team')->group(function () {
