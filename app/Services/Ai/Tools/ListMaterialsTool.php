@@ -60,10 +60,11 @@ class ListMaterialsTool implements AiTool
             return ['ok' => false, 'error' => 'Utilisateur sans tenant.'];
         }
 
+        // Note: we do NOT filter by is_active. Materials are inventory items —
+        // they remain visible even when flagged inactive (matches the UI behaviour).
         $query = Product::query()
             ->where('tenant_id', $tenantId)
-            ->where('type', 'material')
-            ->where('is_active', true);
+            ->where('type', 'material');
 
         if ($search !== '') {
             $query->where(function ($q) use ($search) {

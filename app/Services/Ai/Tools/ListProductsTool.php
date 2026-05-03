@@ -52,9 +52,11 @@ class ListProductsTool implements AiTool
             return ['ok' => false, 'error' => 'Utilisateur sans tenant.'];
         }
 
+        // Default: finished products & services — exclude raw materials (use list_materials for those).
+        // We don't filter by is_active so the user sees the same set as in the UI.
         $query = Product::query()
             ->where('tenant_id', $tenantId)
-            ->where('is_active', true);
+            ->whereIn('type', ['product', 'service']);
 
         if ($search !== '') {
             $query->where(function ($q) use ($search) {

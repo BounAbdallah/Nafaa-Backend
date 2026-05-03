@@ -48,13 +48,15 @@ class ListLowStockTool implements AiTool
             return ['ok' => false, 'error' => 'Utilisateur sans tenant.'];
         }
 
+        // Cover both finished products and raw materials — exclude services
+        // (no stock to track). is_active intentionally not filtered, see ListMaterialsTool.
         $products = Product::query()
             ->where('tenant_id', $tenantId)
-            ->where('is_active', true)
+            ->whereIn('type', ['product', 'material'])
             ->whereColumn('stock_quantity', '<=', 'stock_alert')
             ->orderByRaw('(stock_quantity - stock_alert) ASC')
             ->limit($limit)
-            ->get(['id', 'name', 'sku', 'stock_quantity', 'stock_alert', 'unit']);
+            ->get(['id', 'name', 'sku', 'type', 'stock_quantity', 'stock_alert', 'unit']);
 
         if ($products->isEmpty()) {
             return [
@@ -68,6 +70,7 @@ class ListLowStockTool implements AiTool
         $items = $products->map(fn ($p) => [
             'name'        => $p->name,
             'sku'         => $p->sku,
+            'type'        => $p->type,
             'stock'       => $p->stock_quantity,
             'alert_level' => $p->stock_alert,
             'unit'        => $p->unit,
@@ -75,7 +78,14 @@ class ListLowStockTool implements AiTool
         ])->values()->all();
 
         $summary = $products
-            ->map(fn ($p) => "{$p->name} ({$p->stock_quantity}/{$p->stock_alert})")
+            ->map(fn ($p) => sprintf(
+                '%s%s (%g/%g %s)',
+                $p->name,
+                $p->type === 'material' ? ' [matière]' : '',
+                $p->stock_quantity,
+                $p->stock_alert,
+                $p->unit
+            ))
             ->take(5)
             ->implode(', ');
 
