@@ -5,8 +5,11 @@ namespace App\Services\Ai;
 use App\Services\Ai\Tools\AddStockMovementTool;
 use App\Services\Ai\Tools\AiTool;
 use App\Services\Ai\Tools\CreateProductTool;
+use App\Services\Ai\Tools\LaunchProductionTool;
+use App\Services\Ai\Tools\ListBomsTool;
 use App\Services\Ai\Tools\ListLowStockTool;
 use App\Services\Ai\Tools\ListProductsTool;
+use App\Services\Ai\Tools\QueryBomTool;
 use App\Services\Ai\Tools\QueryStockTool;
 
 /**
@@ -20,11 +23,17 @@ class ToolRegistry
 
     public function __construct()
     {
+        // Stock & catalogue
         $this->register(new AddStockMovementTool());
         $this->register(new QueryStockTool());
         $this->register(new ListLowStockTool());
         $this->register(new ListProductsTool());
         $this->register(new CreateProductTool());
+
+        // Production / Recettes (BOM)
+        $this->register(new ListBomsTool());
+        $this->register(new QueryBomTool());
+        $this->register(new LaunchProductionTool());
     }
 
     public function register(AiTool $tool): void
