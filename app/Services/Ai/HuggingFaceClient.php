@@ -64,23 +64,55 @@ class HuggingFaceClient
     /**
      * Transcribes an audio file with Whisper.
      *
-     * @return array<string, mixed>
+     * Tries two endpoint styles in order:
+     *   1. OpenAI-compatible /v1/audio/transcriptions (multipart)
+     *   2. Direct HF inference /hf-inference/models/{model} (raw bytes)
+     *
+     * Whichever responds first wins. The legacy api-inference.huggingface.co
+     * URL has been deprecated for most models since the Inference Providers
+     * migration and now returns 404 for Whisper.
+     *
+     * @return array{text:string}
      */
     public function transcribe(string $audioPath, string $language = 'fr'): array
     {
-        // Whisper endpoint = direct model inference (not OpenAI-compatible)
-        $url = "https://api-inference.huggingface.co/models/{$this->whisperModel}";
+        $audioBytes = file_get_contents($audioPath);
+
+        // ── Strategy A: OpenAI-compatible multipart ──
+        try {
+            $response = Http::withToken($this->token)
+                ->timeout($this->timeout)
+                ->attach('file', $audioBytes, 'recording.webm')
+                ->post("{$this->baseUrl}/audio/transcriptions", [
+                    'model'           => $this->whisperModel,
+                    'language'        => $language,
+                    'response_format' => 'json',
+                ]);
+
+            if ($response->successful()) {
+                $json = $response->json() ?? [];
+                $text = (string) ($json['text'] ?? '');
+                if ($text !== '') return ['text' => $text];
+            }
+        } catch (\Throwable $e) {
+            Log::debug('[AI] Whisper strategy A failed', ['err' => $e->getMessage()]);
+        }
+
+        // ── Strategy B: direct HF inference (raw bytes) ──
+        $url = "https://router.huggingface.co/hf-inference/models/{$this->whisperModel}";
 
         $response = Http::withToken($this->token)
             ->timeout($this->timeout)
             ->withHeaders([
-                'Content-Type' => 'audio/webm',
+                'Content-Type'     => 'audio/webm',
                 'x-wait-for-model' => 'true',
             ])
-            ->withBody(file_get_contents($audioPath), 'audio/webm')
-            ->post($url . '?language=' . $language);
+            ->withBody($audioBytes, 'audio/webm')
+            ->post($url);
 
-        return $this->handleJsonResponse($response, 'whisper');
+        $json = $this->handleJsonResponse($response, 'whisper');
+
+        return ['text' => (string) ($json['text'] ?? '')];
     }
 
     /**
