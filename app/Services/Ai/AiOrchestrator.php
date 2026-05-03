@@ -20,10 +20,22 @@ class AiOrchestrator
 
     private const SYSTEM_PROMPT = <<<TXT
 Tu es l'assistant intégré de Qiwam ERP.
-- Tu réponds toujours en français, de manière concise et professionnelle.
-- Tu utilises les outils disponibles pour modifier ou interroger l'ERP.
-- Tu n'inventes jamais de produits ou de chiffres : si l'outil échoue, tu le dis clairement à l'utilisateur.
-- Pour les actions de modification (ajout de stock, etc.), confirme l'action effectuée avec les chiffres exacts retournés par l'outil.
+
+RÈGLES STRICTES :
+- Tu réponds TOUJOURS en français, de manière concise (1-3 phrases) et professionnelle.
+- Tu utilises UNIQUEMENT le mécanisme officiel de tool calling (champ `tool_calls` de la réponse). Tu n'écris JAMAIS de syntaxe d'appel de fonction dans le texte (interdit : <function=...>, <tool_call>, JSON entre balises, etc.).
+- Si une question peut être résolue par un outil disponible, tu APPELLES l'outil — tu ne demandes pas à l'utilisateur de le faire à ta place.
+- Tu n'inventes jamais de produits, de SKU, de chiffres ni de noms de clients : seules les données retournées par les outils sont vraies.
+- Si un outil échoue ou ne renvoie rien, dis-le clairement à l'utilisateur en une phrase.
+- Pour les actions de modification (ajout de stock, etc.), confirme avec les chiffres exacts retournés par l'outil.
+
+OUTILS DISPONIBLES :
+- list_low_stock     → "quels produits sont en stock faible / bas / rupture ?"
+- list_products      → "liste mes produits", "trouve les produits X"
+- query_stock        → "stock du produit X ?", "combien il reste de Y ?"
+- add_stock_movement → "ajoute / retire N unités de X"
+
+Si la demande de l'utilisateur ne correspond à aucun outil, réponds simplement en français en 1-2 phrases sans inventer de données.
 TXT;
 
     /**
@@ -89,8 +101,35 @@ TXT;
             'transcript'  => $userText,
             'action'      => $action,
             'tool_result' => $toolResult,
-            'reply'       => $reply,
+            'reply'       => $this->sanitizeReply($reply),
         ];
+    }
+
+    /**
+     * Strips any function-call syntax that the LLM might leak into the textual reply.
+     * Some models (Llama family in particular) occasionally emit
+     * <function=name>{...}</function> or <tool_call>{...}</tool_call> as text
+     * instead of through the proper `tool_calls` channel.
+     */
+    private function sanitizeReply(string $reply): string
+    {
+        $patterns = [
+            '/<function[^>]*>.*?<\/function>/is',
+            '/<tool_call[^>]*>.*?<\/tool_call>/is',
+            '/<\|python_tag\|>.*?(?=<\||$)/is',
+            '/<\|tool_call_start\|>.*?<\|tool_call_end\|>/is',
+        ];
+
+        $cleaned = preg_replace($patterns, '', $reply) ?? $reply;
+        $cleaned = preg_replace('/\n{3,}/', "\n\n", $cleaned) ?? $cleaned;
+        $cleaned = trim($cleaned);
+
+        // If sanitisation killed everything, give the user a graceful fallback
+        if ($cleaned === '') {
+            return "Je n'ai pas pu formuler une réponse. Reformule la question, s'il te plaît.";
+        }
+
+        return $cleaned;
     }
 
     /**

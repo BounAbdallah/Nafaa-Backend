@@ -4,6 +4,8 @@ namespace App\Services\Ai;
 
 use App\Services\Ai\Tools\AddStockMovementTool;
 use App\Services\Ai\Tools\AiTool;
+use App\Services\Ai\Tools\ListLowStockTool;
+use App\Services\Ai\Tools\ListProductsTool;
 use App\Services\Ai\Tools\QueryStockTool;
 
 /**
@@ -19,6 +21,8 @@ class ToolRegistry
     {
         $this->register(new AddStockMovementTool());
         $this->register(new QueryStockTool());
+        $this->register(new ListLowStockTool());
+        $this->register(new ListProductsTool());
     }
 
     public function register(AiTool $tool): void
