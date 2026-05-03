@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api\V1\Ai;
 
 use App\Http\Controllers\Controller;
 use App\Services\Ai\AiOrchestrator;
+use App\Services\Ai\CsvParser;
 use App\Services\Ai\ToolRegistry;
+use App\Services\Ai\Tools\BulkCreateProductsTool;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -94,5 +96,56 @@ class AiController extends Controller
                 $this->registry->schemas(),
             ),
         ]);
+    }
+
+    /**
+     * CSV import → bulk product creation.
+     * Parses the file with CsvParser then delegates to BulkCreateProductsTool.
+     */
+    public function importCsv(Request $request): JsonResponse
+    {
+        $request->validate([
+            'file' => [
+                'required',
+                'file',
+                'max:2048', // 2 MB
+                'mimetypes:text/csv,text/plain,application/vnd.ms-excel,application/csv',
+            ],
+            'default_type' => ['nullable', 'in:product,service,material'],
+        ]);
+
+        $defaultType = (string) ($request->input('default_type') ?? 'material');
+
+        try {
+            $contents = file_get_contents($request->file('file')->getRealPath());
+
+            $items = (new CsvParser())->parse($contents);
+
+            if (empty($items)) {
+                return response()->json([
+                    'ok'      => false,
+                    'message' => 'CSV vide ou non reconnu. Vérifie l\'en-tête (Nom, Catégorie, Prix d\'achat, Stock…).',
+                ], 422);
+            }
+
+            $tool   = new BulkCreateProductsTool();
+            $result = $tool->execute([
+                'items'        => $items,
+                'default_type' => $defaultType,
+            ]);
+
+            return response()->json([
+                'transcript' => 'Import CSV ('.count($items).' lignes)',
+                'action'     => 'bulk_create_products',
+                'tool_result'=> $result,
+                'reply'      => $result['message'] ?? 'Import terminé.',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('[AI] /import-csv failed', ['error' => $e->getMessage()]);
+            return response()->json([
+                'error'  => "Échec de l'import CSV.",
+                'detail' => app()->isLocal() ? $e->getMessage() : null,
+            ], 500);
+        }
     }
 }

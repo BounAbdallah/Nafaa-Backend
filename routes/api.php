@@ -131,9 +131,10 @@ Route::prefix('v1')->group(function () {
 
             // ─── AI Assistant (Qiwam Intelligent) ──────────────────────────
             Route::prefix('ai')->group(function () {
-                Route::get( '/tools', [AiController::class, 'tools']);
-                Route::post('/text',  [AiController::class, 'text']);
-                Route::post('/voice', [AiController::class, 'voice']);
+                Route::get( '/tools',      [AiController::class, 'tools']);
+                Route::post('/text',       [AiController::class, 'text']);
+                Route::post('/voice',      [AiController::class, 'voice']);
+                Route::post('/import-csv', [AiController::class, 'importCsv']);
             });
 
             // Équipe

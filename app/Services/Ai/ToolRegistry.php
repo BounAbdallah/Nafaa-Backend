@@ -4,6 +4,7 @@ namespace App\Services\Ai;
 
 use App\Services\Ai\Tools\AddStockMovementTool;
 use App\Services\Ai\Tools\AiTool;
+use App\Services\Ai\Tools\BulkCreateProductsTool;
 use App\Services\Ai\Tools\CreateProductTool;
 use App\Services\Ai\Tools\LaunchProductionTool;
 use App\Services\Ai\Tools\ListBomsTool;
@@ -30,6 +31,7 @@ class ToolRegistry
         $this->register(new ListLowStockTool());
         $this->register(new ListProductsTool());
         $this->register(new CreateProductTool());
+        $this->register(new BulkCreateProductsTool());
 
         // Production / Recettes (BOM)
         $this->register(new ListMaterialsTool());
