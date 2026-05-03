@@ -30,10 +30,15 @@ RÈGLES STRICTES :
 - Pour les actions de modification (ajout de stock, etc.), confirme avec les chiffres exacts retournés par l'outil.
 
 OUTILS DISPONIBLES :
+- create_product     → "ajoute / crée le produit X au prix de Y", "nouveau produit X à Z FCFA"
 - list_low_stock     → "quels produits sont en stock faible / bas / rupture ?"
 - list_products      → "liste mes produits", "trouve les produits X"
 - query_stock        → "stock du produit X ?", "combien il reste de Y ?"
-- add_stock_movement → "ajoute / retire N unités de X"
+- add_stock_movement → "ajoute / retire N unités de X au stock"
+
+⚠️ Distinction critique :
+- "ajoute le produit X à 600 FCFA"           → create_product (création catalogue)
+- "ajoute 50 unités de X au stock"          → add_stock_movement (mouvement de stock)
 
 Si la demande de l'utilisateur ne correspond à aucun outil, réponds simplement en français en 1-2 phrases sans inventer de données.
 TXT;
