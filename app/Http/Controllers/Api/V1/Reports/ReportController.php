@@ -215,39 +215,61 @@ class ReportController extends Controller
     public function inventoryValuation(Request $request): JsonResponse
     {
         $tenantId = $request->user()->tenant_id;
+        $perPage = $request->query('per_page', 15);
 
-        $products = Product::where('tenant_id', $tenantId)
-            ->where('type', 'product')
+        // Calculate Global Totals first
+        $allProducts = Product::where('tenant_id', $tenantId)
             ->where('stock_quantity', '>', 0)
-            ->get();
+            ->get(['type', 'stock_quantity', 'selling_price', 'cost_price', 'id']);
 
-        $totalValuation = 0;
-        $totalCost = 0;
-        
-        $inventoryDetails = $products->map(function ($product) use (&$totalValuation, &$totalCost) {
-            $valuation = $product->stock_quantity * $product->selling_price;
-            $cost = $product->stock_quantity * ($product->purchase_price ?? 0);
-            
-            $totalValuation += $valuation;
-            $totalCost += $cost;
+        $totalValuationSelling = $allProducts->sum(fn($p) => $p->stock_quantity * $p->selling_price);
+        $totalValuationCost = $allProducts->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
+        $materialValuation = $allProducts->where('type', 'material')->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
+        $productValuation = $allProducts->where('type', '!=', 'material')->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
 
+        // BOM Stock Valuation (Global)
+        $bomProductIds = \App\Models\Bom::where('tenant_id', $tenantId)->pluck('product_id')->toArray();
+        $bomStockValuation = $allProducts->whereIn('id', $bomProductIds)->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
+
+        // Paginated Details
+        $paginated = Product::where('tenant_id', $tenantId)
+            ->where('stock_quantity', '>', 0)
+            ->orderByRaw('stock_quantity * cost_price DESC')
+            ->paginate($perPage);
+
+        $details = collect($paginated->items())->map(function ($item) {
             return [
-                'id' => $product->id,
-                'name' => $product->name,
-                'category' => $product->category,
-                'quantity' => $product->stock_quantity,
-                'unit_price' => $product->selling_price,
-                'valuation' => $valuation,
+                'id' => $item->id,
+                'name' => $item->name,
+                'type' => $item->type,
+                'category' => $item->category,
+                'quantity' => $item->stock_quantity,
+                'unit' => $item->unit,
+                'cost_price' => $item->cost_price,
+                'selling_price' => $item->selling_price,
+                'valuation_cost' => $item->stock_quantity * ($item->cost_price ?? 0),
+                'valuation_selling' => $item->stock_quantity * $item->selling_price,
             ];
-        })->sortByDesc('valuation')->values();
+        });
 
         return response()->json([
             'success' => true,
             'data' => [
-                'total_valuation' => $totalValuation,
-                'total_cost' => $totalCost,
-                'potential_profit' => $totalValuation - $totalCost,
-                'details' => $inventoryDetails,
+                'summary' => [
+                    'total_valuation_selling' => $totalValuationSelling,
+                    'total_valuation_cost' => $totalValuationCost,
+                    'potential_profit' => $totalValuationSelling - $totalValuationCost,
+                    'materials_valuation' => $materialValuation,
+                    'products_valuation' => $productValuation,
+                    'bom_stock_valuation' => $bomStockValuation,
+                ],
+                'details' => $details,
+                'meta' => [
+                    'current_page' => $paginated->currentPage(),
+                    'last_page' => $paginated->lastPage(),
+                    'total' => $paginated->total(),
+                    'per_page' => $paginated->perPage(),
+                ]
             ]
         ]);
     }

@@ -99,8 +99,7 @@ class AiController extends Controller
     }
 
     /**
-     * CSV import → bulk product creation.
-     * Parses the file with CsvParser then delegates to BulkCreateProductsTool.
+     * CSV import → bulk product OR expense creation.
      */
     public function importCsv(Request $request): JsonResponse
     {
@@ -111,24 +110,30 @@ class AiController extends Controller
                 'max:2048', // 2 MB
                 'mimetypes:text/csv,text/plain,application/vnd.ms-excel,application/csv',
             ],
-            'default_type' => ['nullable', 'in:product,service,material'],
+            'default_type' => ['nullable', 'string'], // can be product, material, service OR expense
         ]);
 
         $defaultType = (string) ($request->input('default_type') ?? 'material');
 
         try {
             $contents = file_get_contents($request->file('file')->getRealPath());
-
-            $items = (new CsvParser())->parse($contents);
+            $items    = (new CsvParser())->parse($contents);
 
             if (empty($items)) {
                 return response()->json([
                     'ok'      => false,
-                    'message' => 'CSV vide ou non reconnu. Vérifie l\'en-tête (Nom, Catégorie, Prix d\'achat, Stock…).',
+                    'message' => 'CSV vide ou non reconnu. Vérifie l\'en-tête.',
                 ], 422);
             }
 
-            $tool   = new BulkCreateProductsTool();
+            if ($defaultType === 'expense') {
+                $tool = new BulkCreateExpensesTool();
+                $action = 'bulk_create_expenses';
+            } else {
+                $tool = new BulkCreateProductsTool();
+                $action = 'bulk_create_products';
+            }
+
             $result = $tool->execute([
                 'items'        => $items,
                 'default_type' => $defaultType,
@@ -136,7 +141,7 @@ class AiController extends Controller
 
             return response()->json([
                 'transcript' => 'Import CSV ('.count($items).' lignes)',
-                'action'     => 'bulk_create_products',
+                'action'     => $action,
                 'tool_result'=> $result,
                 'reply'      => $result['message'] ?? 'Import terminé.',
             ]);
