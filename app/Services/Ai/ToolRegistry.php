@@ -8,6 +8,7 @@ use App\Services\Ai\Tools\CreateProductTool;
 use App\Services\Ai\Tools\LaunchProductionTool;
 use App\Services\Ai\Tools\ListBomsTool;
 use App\Services\Ai\Tools\ListLowStockTool;
+use App\Services\Ai\Tools\ListMaterialsTool;
 use App\Services\Ai\Tools\ListProductsTool;
 use App\Services\Ai\Tools\QueryBomTool;
 use App\Services\Ai\Tools\QueryStockTool;
@@ -31,6 +32,7 @@ class ToolRegistry
         $this->register(new CreateProductTool());
 
         // Production / Recettes (BOM)
+        $this->register(new ListMaterialsTool());
         $this->register(new ListBomsTool());
         $this->register(new QueryBomTool());
         $this->register(new LaunchProductionTool());

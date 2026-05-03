@@ -28,8 +28,13 @@ class CreateProductTool implements AiTool
             'type' => 'function',
             'function' => [
                 'name'        => $this->name(),
-                'description' => "Crée un nouveau produit (ou service) dans le catalogue. "
-                              .  "Seuls le nom et le prix de vente sont obligatoires — les autres champs ont des valeurs par défaut.",
+                'description' => "Crée un nouveau item dans le catalogue : produit fini, service OU matière première. "
+                              .  "Seuls le nom et le prix de vente sont obligatoires.\n"
+                              .  "⚠️ CHOISIR LE BON `type` :\n"
+                              .  "  - `product`  → produit fini vendu (défaut). Ex: « Jus de bissap », « Boubou brodé »\n"
+                              .  "  - `material` → matière première / ingrédient utilisé en production. Ex: « Bissap séché », « Riz », « Sucre », « Huile »\n"
+                              .  "  - `service`  → prestation immatérielle. Ex: « Livraison express », « Couture sur mesure »\n"
+                              .  "Pour une matière première, utilise selling_price = prix de revente (ou 0) et cost_price = coût réel d'achat.",
                 'parameters'  => [
                     'type' => 'object',
                     'properties' => [
@@ -68,7 +73,8 @@ class CreateProductTool implements AiTool
                             'description' => 'Description courte (optionnel).',
                         ],
                     ],
-                    'required' => ['name', 'selling_price'],
+                    // selling_price obligatoire pour product/service, optionnel (défaut 0) pour material
+                    'required' => ['name'],
                 ],
             ],
         ];
@@ -77,13 +83,24 @@ class CreateProductTool implements AiTool
     public function execute(array $args): array
     {
         $name         = trim((string) ($args['name'] ?? ''));
-        $sellingPrice = (float) ($args['selling_price'] ?? 0);
+        $type         = (string) ($args['type'] ?? 'product');
+        if (! in_array($type, ['product', 'service', 'material'], true)) {
+            $type = 'product';
+        }
+
+        // selling_price optionnel pour les matières (défaut 0), requis sinon
+        $sellingPrice = isset($args['selling_price'])
+            ? (float) $args['selling_price']
+            : ($type === 'material' ? 0.0 : null);
 
         if ($name === '') {
-            return ['ok' => false, 'error' => 'Le nom du produit est requis.'];
+            return ['ok' => false, 'error' => 'Le nom est requis.'];
+        }
+        if ($sellingPrice === null) {
+            return ['ok' => false, 'error' => "Le prix de vente est requis pour un {$type}."];
         }
         if ($sellingPrice < 0) {
-            return ['ok' => false, 'error' => 'Le prix de vente doit être positif.'];
+            return ['ok' => false, 'error' => 'Le prix de vente ne peut pas être négatif.'];
         }
 
         $tenantId = (int) auth()->user()?->tenant_id;
@@ -109,13 +126,8 @@ class CreateProductTool implements AiTool
             $unit = 'pièce';
         }
 
-        $type = (string) ($args['type'] ?? 'product');
-        if (! in_array($type, ['product', 'service', 'material'], true)) {
-            $type = 'product';
-        }
-
-        // Auto-generate a deterministic-ish SKU
-        $sku = $this->generateSku($name, $tenantId);
+        // Auto-generate a deterministic-ish SKU (prefix MAT- for materials)
+        $sku = $this->generateSku($name, $tenantId, $type);
 
         $product = DB::transaction(function () use ($args, $tenantId, $name, $sellingPrice, $unit, $type, $sku) {
             return Product::create([
@@ -147,16 +159,24 @@ class CreateProductTool implements AiTool
         ];
     }
 
-    private function generateSku(string $name, int $tenantId): string
+    private function generateSku(string $name, int $tenantId, string $type = 'product'): string
     {
         // Take 3 first letters of each word, uppercased
-        $prefix = collect(preg_split('/\s+/', $name))
+        $core = collect(preg_split('/\s+/', $name))
             ->filter()
             ->map(fn ($w) => mb_strtoupper(mb_substr(Str::ascii($w), 0, 3)))
             ->take(3)
             ->implode('-');
 
-        $prefix = $prefix ?: 'PRD';
+        $core = $core ?: 'PRD';
+
+        // Type-aware prefix
+        $typePrefix = match ($type) {
+            'material' => 'MAT',
+            'service'  => 'SVC',
+            default    => 'PRD',
+        };
+        $prefix = $typePrefix.'-'.$core;
 
         // Append random 4-digit suffix, retry if collision
         for ($i = 0; $i < 5; $i++) {

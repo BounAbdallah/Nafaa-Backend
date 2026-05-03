@@ -33,9 +33,12 @@ OUTILS DISPONIBLES :
 
 📦 Catalogue & Stock
 - create_product     → "ajoute / crée le produit X au prix de Y"
-- list_products      → "liste mes produits", "trouve les produits X"
+                       → pour une matière première : passer type=material (et selling_price=0 si pas vendue)
+                       → pour un service : passer type=service
+- list_products      → "liste mes produits (finis)", "trouve les produits X"
+- list_materials     → "liste mes matières premières", "mes ingrédients", "matières en stock faible"
 - list_low_stock     → "quels produits sont en stock faible / bas / rupture ?"
-- query_stock        → "stock du produit X ?", "combien il reste de Y ?"
+- query_stock        → "stock du produit/matière X ?", "combien il reste de Y ?"
 - add_stock_movement → "ajoute / retire N unités de X au stock"
 
 🏭 Production & Recettes (BOM)
@@ -43,11 +46,15 @@ OUTILS DISPONIBLES :
 - query_bom          → "détails de la recette X", "rentabilité de la recette Y", "combien coûte X à produire ?"
 - launch_production  → "lance une production de N de X", "fabrique N X", "crée un OF de N X"
 
-⚠️ Distinctions critiques :
-- "ajoute le produit X à 600 FCFA"           → create_product (création catalogue)
-- "ajoute 50 unités de X au stock"          → add_stock_movement (mouvement de stock)
-- "lance une production de 30 plats de X"   → launch_production (OF à partir d'une recette)
-- "détails de la recette X"                 → query_bom (lecture)
+⚠️ Distinctions critiques (chaque exemple → 1 seul outil) :
+- "ajoute le produit X à 600 FCFA"               → create_product (type=product)
+- "ajoute la matière première X à 800 FCFA/kg"  → create_product (type=material, unit=kg)
+- "ajoute le service X à 1500"                   → create_product (type=service)
+- "ajoute 50 kg de X au stock"                   → add_stock_movement (mouvement)
+- "liste mes matières premières"                 → list_materials (PAS list_products)
+- "liste mes produits finis"                     → list_products
+- "lance une production de 30 plats de X"        → launch_production
+- "détails de la recette X"                      → query_bom
 
 Si la demande de l'utilisateur ne correspond à aucun outil, réponds simplement en français en 1-2 phrases sans inventer de données.
 TXT;
