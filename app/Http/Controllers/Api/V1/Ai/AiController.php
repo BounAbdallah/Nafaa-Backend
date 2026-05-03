@@ -45,16 +45,31 @@ class AiController extends Controller
 
     public function voice(Request $request): JsonResponse
     {
+        // Note: MediaRecorder webm/opus is sometimes detected as video/webm by
+        // Laravel's MIME guesser (the webm container is shared with video).
+        // We accept both, plus all common audio formats, and fall back to a
+        // permissive size+extension check.
         $request->validate([
             'audio' => [
                 'required',
                 'file',
                 'max:'.config('ai.max_audio_kb', 5120),
-                'mimetypes:audio/webm,audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/x-m4a',
+                'mimetypes:'.implode(',', [
+                    'audio/webm', 'audio/mpeg', 'audio/mp4', 'audio/ogg',
+                    'audio/wav',  'audio/x-m4a','audio/flac','audio/aac',
+                    'video/webm', 'video/mp4', 'application/octet-stream',
+                ]),
             ],
         ]);
 
-        $tmpPath = $request->file('audio')->getRealPath();
+        $file    = $request->file('audio');
+        $tmpPath = $file->getRealPath();
+
+        Log::debug('[AI] /voice incoming', [
+            'mime'     => $file->getMimeType(),
+            'ext'      => $file->getClientOriginalExtension(),
+            'size_kb'  => round($file->getSize() / 1024, 1),
+        ]);
 
         try {
             $result = $this->orchestrator->handleVoice($tmpPath);
