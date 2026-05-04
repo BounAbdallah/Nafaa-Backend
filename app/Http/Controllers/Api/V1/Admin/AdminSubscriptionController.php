@@ -131,14 +131,17 @@ class AdminSubscriptionController extends Controller
      */
     public function tracking(): JsonResponse
     {
-        $tenants = Tenant::with(['owner', 'payments' => function($q) {
-            $q->where('year', date('Y'));
+        $year = (int) request('year', date('Y'));
+
+        $tenants = Tenant::with(['owner', 'pack', 'payments' => function($q) use ($year) {
+            $q->where('year', $year);
         }])
         ->latest()
         ->get();
 
         return response()->json([
             'success' => true,
+            'year'    => $year,
             'tenants' => $tenants,
         ]);
     }
