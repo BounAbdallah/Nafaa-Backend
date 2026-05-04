@@ -4,8 +4,9 @@ namespace App\Http\Controllers\Api\V1\Ai;
 
 use App\Http\Controllers\Controller;
 use App\Services\Ai\AiOrchestrator;
-use App\Services\Ai\CsvParser;
+use App\Services\Ai\SpreadsheetParser;
 use App\Services\Ai\ToolRegistry;
+use App\Services\Ai\Tools\BulkCreateExpensesTool;
 use App\Services\Ai\Tools\BulkCreateProductsTool;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -99,7 +100,7 @@ class AiController extends Controller
     }
 
     /**
-     * CSV import → bulk product OR expense creation.
+     * CSV / XLSX import → bulk product OR expense creation.
      */
     public function importCsv(Request $request): JsonResponse
     {
@@ -107,22 +108,30 @@ class AiController extends Controller
             'file' => [
                 'required',
                 'file',
-                'max:2048', // 2 MB
-                'mimetypes:text/csv,text/plain,application/vnd.ms-excel,application/csv',
+                'max:5120', // 5 MB
+                'mimetypes:text/csv,text/plain,application/vnd.ms-excel,application/csv,'
+                    . 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,'
+                    . 'application/octet-stream',
             ],
-            'default_type' => ['nullable', 'string'], // can be product, material, service OR expense
+            'default_type' => ['nullable', 'string'], // product, material, service OR expense
         ]);
 
         $defaultType = (string) ($request->input('default_type') ?? 'material');
 
         try {
-            $contents = file_get_contents($request->file('file')->getRealPath());
-            $items    = (new CsvParser())->parse($contents);
+            $file      = $request->file('file');
+            $parser    = new SpreadsheetParser();
+            $isXlsx    = str_ends_with(strtolower($file->getClientOriginalName()), '.xlsx')
+                      || str_contains((string) $file->getMimeType(), 'spreadsheetml');
+
+            $items = $isXlsx
+                ? $parser->parseXlsx($file->getRealPath())
+                : $parser->parseCsv(file_get_contents($file->getRealPath()));
 
             if (empty($items)) {
                 return response()->json([
                     'ok'      => false,
-                    'message' => 'CSV vide ou non reconnu. Vérifie l\'en-tête.',
+                    'message' => 'Fichier vide ou format non reconnu. Vérifie l\'en-tête.',
                 ], 422);
             }
 
@@ -139,8 +148,9 @@ class AiController extends Controller
                 'default_type' => $defaultType,
             ]);
 
+            $label = $isXlsx ? 'XLSX' : 'CSV';
             return response()->json([
-                'transcript' => 'Import CSV ('.count($items).' lignes)',
+                'transcript' => "Import {$label} (".count($items).' lignes)',
                 'action'     => $action,
                 'tool_result'=> $result,
                 'reply'      => $result['message'] ?? 'Import terminé.',
@@ -148,7 +158,7 @@ class AiController extends Controller
         } catch (\Throwable $e) {
             Log::error('[AI] /import-csv failed', ['error' => $e->getMessage()]);
             return response()->json([
-                'error'  => "Échec de l'import CSV.",
+                'error'  => "Échec de l'import.",
                 'detail' => app()->isLocal() ? $e->getMessage() : null,
             ], 500);
         }

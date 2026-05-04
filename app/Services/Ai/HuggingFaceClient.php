@@ -7,13 +7,17 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Thin wrapper around the Hugging Face Inference API.
+ * Thin wrapper around any OpenAI-compatible AI provider.
  *
- * Free tier docs: https://huggingface.co/docs/inference-providers
+ * Configured par défaut pour Groq (gratuit, généreux, rapide) :
+ *   AI_BASE_URL = https://api.groq.com/openai/v1
+ *   AI_TOKEN    = gsk_xxxx
  *
- * Uses two endpoints:
- *   - Chat Completions (OpenAI-compatible) for the LLM
- *   - Audio Transcription (Whisper) for speech-to-text
+ * Compatible aussi avec Hugging Face Inference Providers, OpenRouter, etc.
+ *
+ * Deux endpoints :
+ *   - Chat Completions   → /chat/completions  (LLM + tool calling)
+ *   - Audio Transcription → /audio/transcriptions (Whisper)
  */
 class HuggingFaceClient
 {
@@ -21,21 +25,23 @@ class HuggingFaceClient
     private string $chatModel;
     private string $whisperModel;
     private string $baseUrl;
-    private int $timeout;
+    private int    $timeout;
 
     public function __construct()
     {
-        $this->token        = (string) config('ai.hf_token');
-        $this->chatModel    = (string) config('ai.chat_model',    'meta-llama/Llama-3.3-70B-Instruct');
-        $this->whisperModel = (string) config('ai.whisper_model', 'openai/whisper-large-v3-turbo');
-        $this->baseUrl      = rtrim((string) config('ai.hf_base_url', 'https://router.huggingface.co/v1'), '/');
-        $this->timeout      = (int) config('ai.timeout', 60);
+        // Priorité à AI_TOKEN / AI_BASE_URL (Groq par défaut).
+        // Rétrocompat avec HF_TOKEN / HF_BASE_URL si pas encore migré.
+        $this->token        = (string) (config('ai.token') ?: config('ai.hf_token'));
+        $this->baseUrl      = rtrim((string) (config('ai.base_url') ?: config('ai.hf_base_url', 'https://api.groq.com/openai/v1')), '/');
+        $this->chatModel    = (string) config('ai.chat_model',    'llama-3.3-70b-versatile');
+        $this->whisperModel = (string) config('ai.whisper_model', 'whisper-large-v3');
+        $this->timeout      = (int)    config('ai.timeout', 60);
     }
 
     /**
-     * Sends a chat completion request with optional tools (function calling).
+     * Envoie une requête de complétion de chat avec tool-calling optionnel.
      *
-     * @param  array<int, array<string, mixed>>  $messages
+     * @param  array<int, array<string, mixed>>       $messages
      * @param  array<int, array<string, mixed>>|null  $tools
      * @return array<string, mixed>
      */
@@ -62,56 +68,36 @@ class HuggingFaceClient
     }
 
     /**
-     * Transcribes an audio file with Whisper.
+     * Transcrit un fichier audio avec Whisper via l'endpoint OpenAI-compatible.
      *
-     * Tries two endpoint styles in order:
-     *   1. OpenAI-compatible /v1/audio/transcriptions (multipart)
-     *   2. Direct HF inference /hf-inference/models/{model} (raw bytes)
+     * Groq supporte : webm, mp3, mp4, wav, ogg, flac, m4a
      *
-     * Whichever responds first wins. The legacy api-inference.huggingface.co
-     * URL has been deprecated for most models since the Inference Providers
-     * migration and now returns 404 for Whisper.
-     *
-     * @return array{text:string}
+     * @return array{text: string}
      */
     public function transcribe(string $audioPath, string $language = 'fr'): array
     {
         $audioBytes = file_get_contents($audioPath);
 
-        // ── Strategy A: OpenAI-compatible multipart ──
-        try {
-            $response = Http::withToken($this->token)
-                ->timeout($this->timeout)
-                ->attach('file', $audioBytes, 'recording.webm')
-                ->post("{$this->baseUrl}/audio/transcriptions", [
-                    'model'           => $this->whisperModel,
-                    'language'        => $language,
-                    'response_format' => 'json',
-                ]);
-
-            if ($response->successful()) {
-                $json = $response->json() ?? [];
-                $text = (string) ($json['text'] ?? '');
-                if ($text !== '') return ['text' => $text];
-            }
-        } catch (\Throwable $e) {
-            Log::debug('[AI] Whisper strategy A failed', ['err' => $e->getMessage()]);
-        }
-
-        // ── Strategy B: direct HF inference (raw bytes) ──
-        $url = "https://router.huggingface.co/hf-inference/models/{$this->whisperModel}";
-
         $response = Http::withToken($this->token)
             ->timeout($this->timeout)
-            ->withHeaders([
-                'Content-Type'     => 'audio/webm',
-                'x-wait-for-model' => 'true',
-            ])
-            ->withBody($audioBytes, 'audio/webm')
-            ->post($url);
+            ->attach('file', $audioBytes, 'recording.webm')
+            ->post("{$this->baseUrl}/audio/transcriptions", [
+                'model'           => $this->whisperModel,
+                'language'        => $language,
+                'response_format' => 'json',
+            ]);
 
-        $json = $this->handleJsonResponse($response, 'whisper');
+        if (! $response->successful()) {
+            Log::warning('[AI] Whisper failed', [
+                'status' => $response->status(),
+                'body'   => mb_substr($response->body(), 0, 500),
+            ]);
+            throw new \RuntimeException(
+                "Whisper API error: HTTP {$response->status()} — {$response->body()}"
+            );
+        }
 
+        $json = $response->json() ?? [];
         return ['text' => (string) ($json['text'] ?? '')];
     }
 
@@ -128,14 +114,14 @@ class HuggingFaceClient
             ]);
 
             throw new \RuntimeException(
-                "Hugging Face API error ({$context}): HTTP {$response->status()}"
+                "AI API error ({$context}): HTTP {$response->status()}"
             );
         }
 
         $json = $response->json();
 
         if (! is_array($json)) {
-            throw new \RuntimeException("Invalid JSON from HF ({$context})");
+            throw new \RuntimeException("Invalid JSON from AI provider ({$context})");
         }
 
         return $json;

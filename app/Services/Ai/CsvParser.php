@@ -16,7 +16,7 @@ class CsvParser
 {
     private const VALID_UNITS = [
         'pièce', 'kg', 'g', 'litre', 'cl', 'ml', 'm', 'cm', 'm²', 'm³',
-        'boîte', 'carton', 'sac', 'heure', 'jour', 'forfait',
+        'boîte', 'carton', 'sac', 'heure', 'jour', 'plat', 'forfait',
     ];
 
     /**
@@ -74,11 +74,14 @@ class CsvParser
             str_contains($h, 'prix') || str_contains($h, 'cost') || str_contains($h, 'achat')
                                                    => 'cost_price',
             str_contains($h, 'vente')              => 'selling_price',
+            str_contains($h, 'montant') || $h === 'amount'
+                                                   => 'amount',
             str_contains($h, 'stock') || str_contains($h, 'qty') || str_contains($h, 'quantite')
                                                    => 'stock_quantity',
             str_contains($h, 'unit')               => 'unit',
             str_contains($h, 'alert')              => 'stock_alert',
             str_contains($h, 'desc')               => 'description',
+            str_contains($h, 'date')               => 'expense_date',
             str_contains($h, 'type')               => 'type',
             default                                => $h,
         };
@@ -89,28 +92,46 @@ class CsvParser
      */
     private function mapRow(array $row): ?array
     {
-        $name = trim((string) ($row['name'] ?? ''));
+        $name        = trim((string) ($row['name'] ?? ''));
+        $description = trim((string) ($row['description'] ?? ''));
+
+        // For expenses, name might be empty, we use description as the fallback name
+        if ($name === '' && $description !== '') {
+            $name = $description;
+        }
+
         if ($name === '') return null;
 
-        $item = ['name' => $name];
+        $item = [
+            'name'        => $name,
+            'description' => $description,
+        ];
 
         if (! empty($row['category']))    $item['category']    = $row['category'];
-        if (! empty($row['description'])) $item['description'] = $row['description'];
         if (! empty($row['type']))        $item['type']        = strtolower($row['type']);
+        if (! empty($row['expense_date']))$item['expense_date']= $row['expense_date'];
 
-        // Cost price + unit can be in the same cell ("500 FCFA / kg")
+        // Extraction of numbers + optional units
         [$costPrice, $costUnit] = $this->extractAmountAndUnit((string) ($row['cost_price'] ?? ''));
         if ($costPrice !== null) $item['cost_price'] = $costPrice;
 
         [$sellingPrice, $sellingUnit] = $this->extractAmountAndUnit((string) ($row['selling_price'] ?? ''));
         if ($sellingPrice !== null) $item['selling_price'] = $sellingPrice;
 
+        [$amount, $amountUnit] = $this->extractAmountAndUnit((string) ($row['amount'] ?? ''));
+        if ($amount !== null) {
+            $item['amount'] = $amount;
+        } elseif ($costPrice !== null) {
+            // Fallback for tools expecting 'amount' but getting 'cost_price' in CSV
+            $item['amount'] = $costPrice;
+        }
+
         // Stock + unit similarly ("3 kg")
         [$stockQty, $stockUnit] = $this->extractAmountAndUnit((string) ($row['stock_quantity'] ?? ''));
         if ($stockQty !== null) $item['stock_quantity'] = $stockQty;
 
         // Unit precedence: explicit `unit` column > stock unit > cost unit
-        $unit = $row['unit'] ?? $stockUnit ?? $costUnit ?? $sellingUnit;
+        $unit = $row['unit'] ?? $stockUnit ?? $costUnit ?? $sellingUnit ?? $amountUnit;
         if ($unit) {
             $unit = $this->normalizeUnit($unit);
             if (in_array($unit, self::VALID_UNITS, true)) $item['unit'] = $unit;

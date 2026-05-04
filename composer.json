@@ -13,6 +13,7 @@
         "laravel/tinker": "^2.10",
         "phpoffice/phpspreadsheet": "^5.7",
         "predis/predis": "^2.3",
+        "smalot/pdfparser": "^2.12",
         "spatie/laravel-permission": "^6.9",
         "stancl/tenancy": "^3.9"
     },

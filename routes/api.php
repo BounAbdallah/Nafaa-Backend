@@ -5,6 +5,11 @@ use App\Http\Controllers\Api\V1\Auth\AuthController;
 use App\Http\Controllers\Api\V1\Auth\EmailVerificationController;
 use App\Http\Controllers\Api\V1\Auth\PasswordResetController;
 use App\Http\Controllers\Api\V1\Customers\CustomerController;
+use App\Http\Controllers\Api\V1\Prestateur\AppointmentController;
+use App\Http\Controllers\Api\V1\Prestateur\QuoteController;
+use App\Http\Controllers\Api\V1\Prestateur\InvoiceController;
+use App\Http\Controllers\Api\V1\Prestateur\ContractController;
+use App\Http\Controllers\Api\V1\Prestateur\DocumentTemplateController;
 use App\Http\Controllers\Api\V1\Expenses\ExpenseController;
 use App\Http\Controllers\Api\V1\Products\ProductController;
 use App\Http\Controllers\Api\V1\Dashboard\DashboardController;
@@ -239,6 +244,32 @@ Route::prefix('v1')->group(function () {
                 Route::post('/{production}/complete', [ProductionController::class, 'complete']);
                 Route::post('/{production}/cancel', [ProductionController::class, 'cancel']);
                 Route::get('/{production}/report', [ProductionController::class, 'downloadReport']);
+            });
+
+            // ─── Module Prestateur ────────────────────────────────────────────
+            Route::prefix('prestateur')->group(function () {
+
+                // Rendez-vous
+                Route::apiResource('appointments', AppointmentController::class);
+
+                // Devis
+                Route::apiResource('quotes', QuoteController::class);
+                Route::post('quotes/{quote}/convert-to-invoice', [QuoteController::class, 'convertToInvoice']);
+                Route::get('quotes/{quote}/pdf', [QuoteController::class, 'downloadPdf']);
+
+                // Factures
+                Route::apiResource('invoices', InvoiceController::class);
+                Route::get('invoices/{invoice}/pdf', [InvoiceController::class, 'downloadPdf']);
+
+                // Contrats
+                Route::apiResource('contracts', ContractController::class);
+
+                // Templates de documents
+                Route::get('templates',                           [DocumentTemplateController::class, 'index']);
+                Route::post('templates',                          [DocumentTemplateController::class, 'store']);
+                Route::put('templates/{documentTemplate}',        [DocumentTemplateController::class, 'update']);
+                Route::delete('templates/{documentTemplate}',     [DocumentTemplateController::class, 'destroy']);
+                Route::post('templates/import-pdf',               [DocumentTemplateController::class, 'importPdf']);
             });
 
             // Paramètres & Profil

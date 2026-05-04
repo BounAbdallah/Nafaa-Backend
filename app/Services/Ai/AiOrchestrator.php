@@ -51,23 +51,23 @@ OUTILS DISPONIBLES :
 - query_stock        → "stock du produit/matière X ?", "combien il reste de Y ?"
 - add_stock_movement → "ajoute / retire N unités de X au stock"
 
-🏭 Production & Recettes (BOM)
+Production & Recettes (BOM)
 - list_boms          → "liste mes recettes", "quelles BOMs ai-je ?"
 - query_bom          → "détails de la recette X", "rentabilité de la recette Y"
 - launch_production  → "lance une production de N de X", "fabrique N X"
 
-💸 Finance & Dépenses
+Finance & Dépenses
 - create_expense     → "enregistre une dépense de N pour X", "payé 5000 pour loyer"
 - list_expenses      → "combien j'ai dépensé ?", "mes dépenses de ce mois"
 - bulk_create_expenses → pour importer une liste de dépenses d'un coup.
 
-🤝 Commerce & CRM
+Commerce & CRM
 - list_orders        → "combien j'ai vendu aujourd'hui ?", "liste les ventes de Mai"
 - query_order        → "détails de la commande X", "statut de la vente Y"
 - list_customers     → "trouve le client X", "donne-moi le numéro de Y", "meilleurs clients"
 - create_customer    → "ajoute un client nommé X au numéro Y"
 
-⚠️ Distinctions critiques (chaque exemple → 1 seul outil) :
+Distinctions critiques (chaque exemple → 1 seul outil) :
 - "ajoute le produit X à 600 FCFA"               → create_product (type=product)
 - "ajoute la matière première X à 800 FCFA/kg"  → create_product (type=material, unit=kg)
 - "ajoute 50 kg de X au stock"                   → add_stock_movement (mouvement)
@@ -86,8 +86,9 @@ TXT;
      */
     public function handleText(string $userText): array
     {
+        $now = now()->format('d/m/Y H:i:s');
         $messages = [
-            ['role' => 'system', 'content' => self::SYSTEM_PROMPT],
+            ['role' => 'system', 'content' => self::SYSTEM_PROMPT . "\n\nDATE ACTUELLE : {$now}"],
             ['role' => 'user',   'content' => $userText],
         ];
 
@@ -95,6 +96,26 @@ TXT;
         $msg   = $first['choices'][0]['message'] ?? [];
 
         $toolCalls = $msg['tool_calls'] ?? [];
+
+        // Heuristic: Some smaller models (like Llama 8B) output JSON as plain text
+        // instead of using the formal tool_calls field.
+        if (empty($toolCalls) && ! empty($msg['content'])) {
+            $content = trim($msg['content']);
+            if (str_starts_with($content, '{') && str_ends_with($content, '}')) {
+                $decoded = json_decode($content, true);
+                if (isset($decoded['name']) || isset($decoded['function']['name'])) {
+                    $toolCalls = [[
+                        'id'       => 'call_' . uniqid(),
+                        'type'     => 'function',
+                        'function' => [
+                            'name'      => $decoded['name'] ?? $decoded['function']['name'],
+                            'arguments' => $decoded['arguments'] ?? $decoded['function']['arguments'] ?? $decoded['parameters'] ?? '{}',
+                        ]
+                    ]];
+                }
+            }
+        }
+
         $toolResult = null;
         $action = 'none';
 
@@ -122,7 +143,14 @@ TXT;
             }
 
             // Second turn — feed the tool's result back to the LLM for a NL response
-            $messages[] = $msg;
+            // We strip the content from the first message if it was a heuristic match
+            // to avoid confusing the model with its own leaked JSON.
+            $messages[] = [
+                'role'       => 'assistant',
+                'content'    => null,
+                'tool_calls' => $toolCalls,
+            ];
+
             $messages[] = [
                 'role'         => 'tool',
                 'tool_call_id' => $call['id'] ?? '',
@@ -130,10 +158,14 @@ TXT;
                 'content'      => json_encode($toolResult, JSON_UNESCAPED_UNICODE),
             ];
 
-            $second = $this->hf->chat($messages); // no tools on the wrap-up turn
-            $reply  = (string) ($second['choices'][0]['message']['content']
-                                ?? $toolResult['message']
-                                ?? 'Action effectuée.');
+            try {
+                $second = $this->hf->chat($messages);
+                $reply  = (string) ($second['choices'][0]['message']['content']
+                                    ?? $toolResult['message']
+                                    ?? 'Action effectuée.');
+            } catch (\Throwable $e) {
+                $reply = $toolResult['message'] ?? 'Action effectuée (mais erreur de réponse NL).';
+            }
         } else {
             $reply = (string) ($msg['content'] ?? '');
         }
