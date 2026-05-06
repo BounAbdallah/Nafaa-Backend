@@ -14,8 +14,9 @@ use Illuminate\Support\Facades\Log;
 class AiOrchestrator
 {
     public function __construct(
-        private readonly HuggingFaceClient $hf,
-        private readonly ToolRegistry $tools,
+        private readonly HuggingFaceClient  $hf,
+        private readonly ToolRegistry       $tools,
+        private readonly LocalFallbackEngine $fallback,
     ) {}
 
     private const SYSTEM_PROMPT = <<<TXT
@@ -82,9 +83,10 @@ TXT;
     /**
      * Runs a text command through the LLM and resolves any tool call.
      *
+     * @param  bool  $isVoice  Si true, utilise le modèle léger (plus haut TPM Groq)
      * @return array{transcript:string, action:string, tool_result:?array, reply:string}
      */
-    public function handleText(string $userText): array
+    public function handleText(string $userText, bool $isVoice = false): array
     {
         $now = now()->format('d/m/Y H:i:s');
         $messages = [
@@ -92,7 +94,13 @@ TXT;
             ['role' => 'user',   'content' => $userText],
         ];
 
-        $first = $this->hf->chat($messages, $this->tools->schemas());
+        try {
+            $first = $this->hf->chat($messages, $this->tools->schemas(), 0.2, $isVoice);
+        } catch (\Throwable $e) {
+            // Groq indisponible (rate limit, timeout, erreur réseau…) → fallback local
+            Log::info('[AI] Groq unavailable — basculement fallback local', ['reason' => $e->getMessage()]);
+            return $this->fallback->handle($userText);
+        }
         $msg   = $first['choices'][0]['message'] ?? [];
 
         $toolCalls = $msg['tool_calls'] ?? [];
@@ -159,7 +167,7 @@ TXT;
             ];
 
             try {
-                $second = $this->hf->chat($messages);
+                $second = $this->hf->chat($messages, null, 0.2, $isVoice);
                 $reply  = (string) ($second['choices'][0]['message']['content']
                                     ?? $toolResult['message']
                                     ?? 'Action effectuée.');
@@ -207,6 +215,7 @@ TXT;
 
     /**
      * Transcribes audio then runs the full text pipeline.
+     * Utilise le modèle léger (voice_model) pour avoir plus de TPM disponibles.
      */
     public function handleVoice(string $audioPath): array
     {
@@ -222,6 +231,7 @@ TXT;
             ];
         }
 
-        return $this->handleText($text);
+        // isVoice=true → utilise llama-3.1-8b-instant (20k TPM vs 12k pour le 70B)
+        return $this->handleText($text, true);
     }
 }

@@ -1,4 +1,4 @@
-# Qiwam Intelligent — POC IA & Vocal
+# Qiwam assistant — POC IA & Vocal
 
 Ce POC ajoute une couche IA conversationnelle (texte + vocal) au-dessus de Qiwam ERP,
 en s'appuyant sur l'**Inference API gratuite de Hugging Face**.

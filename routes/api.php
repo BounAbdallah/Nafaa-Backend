@@ -134,7 +134,7 @@ Route::prefix('v1')->group(function () {
             // Dashboard
             Route::get('/dashboard', [DashboardController::class, 'index']);
 
-            // ─── AI Assistant (Qiwam Intelligent) ──────────────────────────
+            // ─── AI Assistant (Qiwam assistant) ──────────────────────────
             Route::prefix('ai')->group(function () {
                 Route::get( '/tools',      [AiController::class, 'tools']);
                 Route::post('/text',       [AiController::class, 'text']);

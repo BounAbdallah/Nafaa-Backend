@@ -36,7 +36,7 @@ class QuoteController extends Controller
             'notes'       => 'nullable|string',
             'terms'       => 'nullable|string',
             'items'       => 'array',
-            'items.*.description' => 'required|string',
+            'items.*.description' => 'nullable|string',
             'items.*.quantity'    => 'required|numeric|min:0',
             'items.*.unit_price'  => 'required|numeric|min:0',
         ]);
@@ -77,7 +77,7 @@ class QuoteController extends Controller
             'notes'      => 'nullable|string',
             'terms'      => 'nullable|string',
             'items'      => 'sometimes|array',
-            'items.*.description' => 'required_with:items|string',
+            'items.*.description' => 'nullable|string',
             'items.*.quantity'    => 'required_with:items|numeric|min:0',
             'items.*.unit_price'  => 'required_with:items|numeric|min:0',
         ]);
@@ -141,6 +141,8 @@ class QuoteController extends Controller
     private function syncItems(Quote $quote, array $items): void
     {
         $quote->items()->delete();
+        // Ignorer les lignes sans description
+        $items = array_values(array_filter($items, fn($it) => !empty(trim($it['description'] ?? ''))));
         foreach ($items as $i => $item) {
             $total = round(($item['quantity'] ?? 1) * ($item['unit_price'] ?? 0), 2);
             $quote->items()->create([
