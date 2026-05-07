@@ -19,13 +19,13 @@ class ProductResource extends JsonResource
             'category_id'    => $this->category_id,
             'category_data'  => $this->category_id ? [
                 'id'    => $this->category_id,
-                'name'  => $this->category?->name,
-                'color' => $this->category?->color,
+                'name'  => $this->getRelation('category')?->name,
+                'color' => $this->getRelation('category')?->color,
             ] : null,
-            'category'       => $this->category,
-            'category_label' => $this->category_id 
-                ? $this->category?->name 
-                : (\App\Models\Product::categories()[$this->category] ?? $this->category),
+            'category'       => $this->getRawOriginal('category'),
+            'category_label' => $this->category_id
+                ? $this->getRelation('category')?->name
+                : (\App\Models\Product::categories()[$this->getRawOriginal('category') ?? ''] ?? $this->getRawOriginal('category')),
             'unit'           => $this->unit,
             'selling_price'  => $this->selling_price,
             'cost_price'     => $this->cost_price,

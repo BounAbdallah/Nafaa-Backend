@@ -89,6 +89,8 @@ class ProductController extends Controller
             'is_active'      => $data['is_active'] ?? true,
         ]);
 
+        $product->loadMissing('category');
+
         return response()->json([
             'success' => true,
             'message' => 'Produit créé avec succès.',
@@ -99,6 +101,7 @@ class ProductController extends Controller
     public function show(Request $request, Product $product): JsonResponse
     {
         $this->authorizeTenant($request, $product);
+        $product->loadMissing('category');
         return response()->json(['success' => true, 'data' => ['product' => new ProductResource($product)]]);
     }
 
@@ -141,7 +144,7 @@ class ProductController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Produit mis à jour.',
-            'data'    => ['product' => new ProductResource($product->fresh())],
+            'data'    => ['product' => new ProductResource($product->fresh()->load('category'))],
         ]);
     }
 
