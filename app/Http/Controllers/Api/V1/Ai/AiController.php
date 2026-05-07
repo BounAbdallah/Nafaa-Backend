@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api\V1\Ai;
 
 use App\Http\Controllers\Controller;
 use App\Services\Ai\AiOrchestrator;
+use App\Services\Ai\BomSpreadsheetParser;
 use App\Services\Ai\SpreadsheetParser;
 use App\Services\Ai\ToolRegistry;
+use App\Services\Ai\Tools\BulkCreateBomsTool;
 use App\Services\Ai\Tools\BulkCreateExpensesTool;
 use App\Services\Ai\Tools\BulkCreateProductsTool;
 use Illuminate\Http\JsonResponse;
@@ -135,22 +137,37 @@ class AiController extends Controller
                 ], 422);
             }
 
-            if ($defaultType === 'expense') {
-                $tool = new BulkCreateExpensesTool();
+            if ($defaultType === 'bom') {
+                // Import recettes — parser spécialisé (groupé par produit)
+                $parser = new BomSpreadsheetParser();
+                $boms   = $isXlsx
+                    ? $parser->parseXlsx($file->getRealPath())
+                    : $parser->parseCsv(file_get_contents($file->getRealPath()));
+
+                if (empty($boms)) {
+                    return response()->json([
+                        'ok'      => false,
+                        'message' => 'Fichier vide ou colonnes non reconnues. Vérifie le format BOM.',
+                    ], 422);
+                }
+
+                $tool   = new BulkCreateBomsTool();
+                $action = 'bulk_create_boms';
+                $result = $tool->execute(['boms' => $boms]);
+            } elseif ($defaultType === 'expense') {
+                $tool   = new BulkCreateExpensesTool();
                 $action = 'bulk_create_expenses';
+                $result = $tool->execute(['items' => $items, 'default_type' => $defaultType]);
             } else {
-                $tool = new BulkCreateProductsTool();
+                $tool   = new BulkCreateProductsTool();
                 $action = 'bulk_create_products';
+                $result = $tool->execute(['items' => $items, 'default_type' => $defaultType]);
             }
 
-            $result = $tool->execute([
-                'items'        => $items,
-                'default_type' => $defaultType,
-            ]);
-
-            $label = $isXlsx ? 'XLSX' : 'CSV';
+            $label     = $isXlsx ? 'XLSX' : 'CSV';
+            $lineCount = $defaultType === 'bom' ? count($boms ?? []) : count($items);
             return response()->json([
-                'transcript' => "Import {$label} (".count($items).' lignes)',
+                'transcript' => "Import {$label} ({$lineCount} recette(s))",
                 'action'     => $action,
                 'tool_result'=> $result,
                 'reply'      => $result['message'] ?? 'Import terminé.',
