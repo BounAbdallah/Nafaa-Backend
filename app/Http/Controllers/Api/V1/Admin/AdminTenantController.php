@@ -14,10 +14,11 @@ class AdminTenantController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = Tenant::withoutGlobalScopes()
+            ->with(['owner', 'pack'])
             ->withCount('users')
             ->latest();
 
-        if ($request->has('search')) {
+        if ($request->filled('search')) {
             $search = $request->search;
             $query->where(fn ($q) =>
                 $q->where('name', 'like', "%$search%")
@@ -25,9 +26,18 @@ class AdminTenantController extends Controller
             );
         }
 
-        if ($request->has('industry')) {
+        if ($request->filled('industry')) {
             $query->where('industry', $request->industry);
         }
+
+        if ($request->filled('status')) {
+            $query->where('is_active', $request->status === 'active');
+        }
+
+        // Compteurs globaux (avant pagination)
+        $baseQuery    = Tenant::withoutGlobalScopes();
+        $activeCount  = (clone $baseQuery)->where('is_active', true)->count();
+        $inactiveCount = (clone $baseQuery)->where('is_active', false)->count();
 
         $tenants = $query->paginate($request->get('per_page', 20));
 
@@ -35,11 +45,13 @@ class AdminTenantController extends Controller
             'success' => true,
             'data'    => [
                 'tenants' => TenantResource::collection($tenants->items()),
-                'meta'  => [
-                    'total'        => $tenants->total(),
-                    'per_page'     => $tenants->perPage(),
-                    'current_page' => $tenants->currentPage(),
-                    'last_page'    => $tenants->lastPage(),
+                'meta'    => [
+                    'total'          => $tenants->total(),
+                    'per_page'       => $tenants->perPage(),
+                    'current_page'   => $tenants->currentPage(),
+                    'last_page'      => $tenants->lastPage(),
+                    'active_count'   => $activeCount,
+                    'inactive_count' => $inactiveCount,
                 ],
             ],
         ]);
@@ -86,6 +98,28 @@ class AdminTenantController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Espace de travail mis à jour.',
+            'data'    => ['tenant' => new TenantResource($tenant->fresh())],
+        ]);
+    }
+
+    /**
+     * Override individual modules for a tenant (super admin only).
+     * Preserves all other settings fields.
+     */
+    public function updateModules(Request $request, Tenant $tenant): JsonResponse
+    {
+        $data = $request->validate([
+            'enabled_modules'   => ['required', 'array'],
+            'enabled_modules.*' => ['string'],
+        ]);
+
+        $settings = $tenant->settings ?? [];
+        $settings['enabled_modules'] = $data['enabled_modules'];
+        $tenant->update(['settings' => $settings]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Modules mis à jour.',
             'data'    => ['tenant' => new TenantResource($tenant->fresh())],
         ]);
     }

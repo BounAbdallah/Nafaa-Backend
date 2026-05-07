@@ -102,7 +102,7 @@ class AuthService
             [
                 'email'                 => $data['email'],
                 'password'              => $data['password'],
-                'password_confirmation' => $data['password_confirmation'],
+                'password_confirmation' => $data['password_confirmation'] ?? $data['password'],
                 'token'                 => $data['token'],
             ],
             function (User $user, string $password) {

@@ -100,8 +100,9 @@ Route::prefix('v1')->group(function () {
             Route::patch('/users/{user}/unblock', [AdminUserController::class, 'unblock']);
 
             // Gestion des espaces de travail (Tenants)
-            Route::get('/tenants',                  [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'index']);
-            Route::patch('/tenants/{tenant}',       [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'updateTenant']);
+            Route::get('/tenants',                         [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'index']);
+            Route::patch('/tenants/{tenant}',              [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'updateTenant']);
+            Route::patch('/tenants/{tenant}/modules',      [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'updateModules']);
 
             // Gestion des Packs
             Route::apiResource('/packs', \App\Http\Controllers\Api\V1\Admin\PackController::class);

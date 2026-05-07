@@ -24,10 +24,20 @@ class TenantResource extends JsonResource
             'is_on_trial'     => $this->isOnTrial(),
             'has_active_plan' => $this->hasActivePlan(),
             'users_count'     => $this->users_count ?? 0,
+            'owner'           => $this->whenLoaded('owner', fn () => [
+                'id'    => $this->owner->id,
+                'name'  => $this->owner->name,
+                'email' => $this->owner->email,
+            ]),
+            'pack'            => $this->whenLoaded('pack', fn () => $this->pack ? [
+                'id'    => $this->pack->id,
+                'name'  => $this->pack->name,
+                'price' => $this->pack->price,
+            ] : null),
             'db_size'         => number_format(($this->id * 3.4) + 12, 1) . ' MB',
             'plan_expires_at' => $this->plan_expires_at?->toIso8601String(),
             'trial_ends_at'   => $this->trial_ends_at?->toIso8601String(),
-            'settings'        => $this->settings ?? ['enabled_modules' => ['sales', 'production', 'crm', 'inventory', 'finance']],
+            'settings'        => $this->settings ?? [],
             'created_at'      => $this->created_at->toIso8601String(),
         ];
     }

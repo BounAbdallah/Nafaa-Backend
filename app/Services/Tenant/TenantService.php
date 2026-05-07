@@ -35,7 +35,16 @@ class TenantService
             if (isset($data['pack_id'])) {
                 $pack = \App\Models\Pack::find($data['pack_id']);
                 if ($pack) {
-                    $tenant->update(['plan' => $pack->slug]);
+                    $packUpdates = ['plan' => $pack->slug];
+
+                    // Auto-apply pack features as enabled_modules immediately at creation
+                    if (!empty($pack->features)) {
+                        $packUpdates['settings'] = [
+                            'enabled_modules' => $pack->features,
+                        ];
+                    }
+
+                    $tenant->update($packUpdates);
                 }
             }
 
