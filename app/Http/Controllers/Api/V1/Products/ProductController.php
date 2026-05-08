@@ -102,7 +102,47 @@ class ProductController extends Controller
     {
         $this->authorizeTenant($request, $product);
         $product->loadMissing('category');
-        return response()->json(['success' => true, 'data' => ['product' => new ProductResource($product)]]);
+
+        // Last purchase price from supplier orders
+        $lastPurchase = \Illuminate\Support\Facades\DB::table('purchase_order_items')
+            ->join('purchase_orders', 'purchase_order_items.purchase_order_id', '=', 'purchase_orders.id')
+            ->where('purchase_order_items.product_id', $product->id)
+            ->where('purchase_orders.tenant_id', $product->tenant_id)
+            ->whereNotIn('purchase_orders.status', ['cancelled'])
+            ->whereNull('purchase_orders.deleted_at')
+            ->orderByDesc('purchase_orders.created_at')
+            ->select('purchase_order_items.unit_price', 'purchase_orders.created_at')
+            ->first();
+
+        // Last production unit cost (for products made via production/BOM)
+        $lastProduction = \Illuminate\Support\Facades\DB::table('productions')
+            ->where('product_id', $product->id)
+            ->where('tenant_id', $product->tenant_id)
+            ->where('status', 'completed')
+            ->whereRaw('actual_quantity > 0')
+            ->orderByDesc('completed_at')
+            ->select('total_cost', 'actual_quantity', 'completed_at')
+            ->first();
+
+        $hasBom = \App\Models\Bom::where('product_id', $product->id)
+            ->where('tenant_id', $product->tenant_id)
+            ->where('is_active', true)
+            ->exists();
+
+        $pricing = [
+            'last_purchase_price'      => $lastPurchase ? (float) $lastPurchase->unit_price : null,
+            'last_purchase_date'       => $lastPurchase ? $lastPurchase->created_at : null,
+            'last_production_unit_cost'=> $lastProduction
+                ? round((float) $lastProduction->total_cost / (float) $lastProduction->actual_quantity, 0)
+                : null,
+            'last_production_date'     => $lastProduction ? $lastProduction->completed_at : null,
+            'has_bom'                  => $hasBom,
+        ];
+
+        return response()->json([
+            'success' => true,
+            'data'    => ['product' => array_merge((new ProductResource($product))->resolve($request), ['pricing' => $pricing])],
+        ]);
     }
 
     public function update(Request $request, Product $product): JsonResponse
@@ -188,49 +228,66 @@ class ProductController extends Controller
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->where('order_items.product_id', $product->id)
             ->where('orders.status', '!=', 'cancelled')
+            ->whereNull('orders.deleted_at')
             ->selectRaw('DATE_FORMAT(orders.created_at, "%Y-%m") as month, SUM(order_items.subtotal) as total')
             ->groupBy('month')
             ->get()
             ->pluck('total', 'month');
 
-        // Expenses (Dépenses / Achats)
-        $expensesData = \Illuminate\Support\Facades\DB::table('purchase_order_items')
-            ->join('purchase_orders', 'purchase_order_items.purchase_order_id', '=', 'purchase_orders.id')
-            ->where('purchase_order_items.product_id', $product->id)
-            ->where('purchase_orders.status', '!=', 'cancelled')
-            ->selectRaw('DATE_FORMAT(purchase_orders.created_at, "%Y-%m") as month, SUM(purchase_order_items.quantity * purchase_order_items.unit_price) as total')
+        // Cost of Goods Sold per month = qty_sold × cost_price
+        $cogsData = \Illuminate\Support\Facades\DB::table('order_items')
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
+            ->where('order_items.product_id', $product->id)
+            ->where('orders.status', '!=', 'cancelled')
+            ->whereNull('orders.deleted_at')
+            ->selectRaw('DATE_FORMAT(orders.created_at, "%Y-%m") as month, SUM(order_items.quantity) as qty')
             ->groupBy('month')
             ->get()
-            ->pluck('total', 'month');
+            ->mapWithKeys(fn($row) => [$row->month => round((float)$row->qty * $product->cost_price, 2)]);
 
-        $chartData = $months->map(function ($m) use ($revenueData, $expensesData) {
-            $monthKey = substr($m['date_start'], 0, 7); // YYYY-MM
+        $chartData = $months->map(function ($m) use ($revenueData, $cogsData) {
+            $monthKey = substr($m['date_start'], 0, 7);
             return [
                 'name'     => $m['label'],
                 'Revenus'  => (float)($revenueData[$monthKey] ?? 0),
-                'Dépenses' => (float)($expensesData[$monthKey] ?? 0),
+                'Coût'     => (float)($cogsData[$monthKey] ?? 0),
             ];
         });
 
+        // Totals
         $totalRevenue = \Illuminate\Support\Facades\DB::table('order_items')
             ->join('orders', 'order_items.order_id', '=', 'orders.id')
             ->where('order_items.product_id', $product->id)
             ->where('orders.status', '!=', 'cancelled')
+            ->whereNull('orders.deleted_at')
             ->sum('order_items.subtotal');
 
-        $totalExpenses = \Illuminate\Support\Facades\DB::table('purchase_order_items')
+        $totalQtySold = \Illuminate\Support\Facades\DB::table('order_items')
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
+            ->where('order_items.product_id', $product->id)
+            ->where('orders.status', '!=', 'cancelled')
+            ->whereNull('orders.deleted_at')
+            ->sum('order_items.quantity');
+
+        $totalCogs = round((float)$totalQtySold * $product->cost_price, 2);
+
+        // Purchase orders total (for info only)
+        $totalPurchases = \Illuminate\Support\Facades\DB::table('purchase_order_items')
             ->join('purchase_orders', 'purchase_order_items.purchase_order_id', '=', 'purchase_orders.id')
             ->where('purchase_order_items.product_id', $product->id)
             ->where('purchase_orders.status', '!=', 'cancelled')
+            ->whereNull('purchase_orders.deleted_at')
             ->sum(\Illuminate\Support\Facades\DB::raw('purchase_order_items.quantity * purchase_order_items.unit_price'));
 
         return response()->json([
             'success' => true,
             'data'    => [
-                'total_revenue'  => (float)$totalRevenue,
-                'total_expenses' => (float)$totalExpenses,
-                'profit'         => (float)$totalRevenue - (float)$totalExpenses,
-                'chart_data'     => $chartData,
+                'total_revenue'   => (float)$totalRevenue,
+                'total_expenses'  => $totalCogs,           // COGS = cost_price × qty sold
+                'total_purchases' => (float)$totalPurchases, // BCs fournisseurs (info)
+                'total_qty_sold'  => (float)$totalQtySold,
+                'profit'          => (float)$totalRevenue - $totalCogs,
+                'chart_data'      => $chartData,
             ],
         ]);
     }

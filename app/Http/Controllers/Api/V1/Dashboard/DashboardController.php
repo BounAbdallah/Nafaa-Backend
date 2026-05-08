@@ -46,6 +46,7 @@ class DashboardController extends Controller
 
         // 2. Commandes pour la période
         $ordersCountMonth = Order::where('tenant_id', $tenantId)
+            ->where('status', '!=', 'cancelled')
             ->whereBetween('created_at', [$startDate, $endDate])
             ->count();
 
@@ -53,6 +54,7 @@ class DashboardController extends Controller
         $ordersGrowth = 0;
         if (!$isCustomRange) {
             $ordersCountLastMonth = Order::where('tenant_id', $tenantId)
+                ->where('status', '!=', 'cancelled')
                 ->whereBetween('created_at', [$startOfLastMonth, $endOfLastMonth])
                 ->count();
 
@@ -100,6 +102,7 @@ class DashboardController extends Controller
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->where('orders.tenant_id', $tenantId)
             ->where('orders.status', '!=', 'cancelled')
+            ->whereNull('orders.deleted_at')
             ->whereBetween('orders.created_at', [$startDate, $endDate])
             ->select('products.name', DB::raw('SUM(order_items.quantity) as total_qty'), DB::raw('SUM(order_items.subtotal) as total_revenue'))
             ->groupBy('products.id', 'products.name')
@@ -112,6 +115,7 @@ class DashboardController extends Controller
         $salesHistory = DB::table('orders')
             ->where('tenant_id', $tenantId)
             ->where('status', '!=', 'cancelled')
+            ->whereNull('deleted_at')
             ->whereBetween('created_at', [$historyStart, $endDate])
             ->select(DB::raw('DATE(created_at) as date'), DB::raw('SUM(total_amount) as total'), DB::raw('COUNT(*) as count'))
             ->groupBy('date')
@@ -131,6 +135,7 @@ class DashboardController extends Controller
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->where('orders.tenant_id', $tenantId)
             ->where('orders.status', '!=', 'cancelled')
+            ->whereNull('orders.deleted_at')
             ->whereBetween('orders.created_at', [$startDate, $endDate])
             ->select('products.category', DB::raw('SUM(order_items.subtotal) as value'))
             ->groupBy('products.category')
@@ -141,6 +146,7 @@ class DashboardController extends Controller
             ->join('customers', 'orders.customer_id', '=', 'customers.id')
             ->where('orders.tenant_id', $tenantId)
             ->where('orders.status', '!=', 'cancelled')
+            ->whereNull('orders.deleted_at')
             ->whereBetween('orders.created_at', [$startDate, $endDate])
             ->select('customers.name', DB::raw('SUM(orders.total_amount) as total'), DB::raw('COUNT(orders.id) as count'))
             ->groupBy('customers.id', 'customers.name')
@@ -153,6 +159,7 @@ class DashboardController extends Controller
             ->join('users', 'orders.user_id', '=', 'users.id')
             ->where('orders.tenant_id', $tenantId)
             ->where('orders.status', '!=', 'cancelled')
+            ->whereNull('orders.deleted_at')
             ->whereBetween('orders.created_at', [$startDate, $endDate])
             ->select('users.name', DB::raw('SUM(orders.total_amount) as total'))
             ->groupBy('users.id', 'users.name')
@@ -164,6 +171,7 @@ class DashboardController extends Controller
         $paymentMethodsDist = DB::table('orders')
             ->where('tenant_id', $tenantId)
             ->where('status', '!=', 'cancelled')
+            ->whereNull('deleted_at')
             ->whereBetween('created_at', [$startDate, $endDate])
             ->select('payment_method', DB::raw('COUNT(*) as count'), DB::raw('SUM(total_amount) as total'))
             ->groupBy('payment_method')

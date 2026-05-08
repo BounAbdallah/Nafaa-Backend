@@ -87,6 +87,7 @@ class TeamController extends Controller
             ->where('user_id', $user->id)
             ->where('tenant_id', $tenant->id)
             ->where('status', '!=', 'cancelled')
+            ->whereNull('deleted_at')
             ->selectRaw('DATE_FORMAT(created_at, "%Y-%m") as month, SUM(total_amount) as total')
             ->groupBy('month')
             ->get()
@@ -105,12 +106,14 @@ class TeamController extends Controller
             ->where('user_id', $user->id)
             ->where('tenant_id', $tenant->id)
             ->where('status', '!=', 'cancelled')
+            ->whereNull('deleted_at')
             ->sum('total_amount');
 
         $totalOrdersCount = \Illuminate\Support\Facades\DB::table('orders')
             ->where('user_id', $user->id)
             ->where('tenant_id', $tenant->id)
             ->where('status', '!=', 'cancelled')
+            ->whereNull('deleted_at')
             ->count();
 
         $totalPurchaseAmount = \Illuminate\Support\Facades\DB::table('purchase_orders')
