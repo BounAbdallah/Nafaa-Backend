@@ -159,19 +159,34 @@ class ReportController extends Controller
             $endDate = $now->endOfMonth()->toDateString();
         }
 
-        // Revenues
+        // Revenues (chiffre d'affaires total)
         $revenues = Order::where('tenant_id', $tenantId)
             ->where('status', '!=', 'cancelled')
             ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
             ->sum('total_amount');
 
-        // Expenses
+        // Expenses (charges)
         $expenses = Expense::where('tenant_id', $tenantId)
             ->whereBetween('expense_date', [$startDate, $endDate])
             ->sum('amount');
 
-        // Net Profit
-        $netProfit = $revenues - $expenses;
+        // Bénéfice brut = Σ (prix de vente - prix d'achat) × quantité
+        // = SUM(subtotal) - SUM(cost_price * quantity)
+        $grossProfit = (float) DB::table('order_items')
+            ->join('orders',   'order_items.order_id',   '=', 'orders.id')
+            ->join('products', 'order_items.product_id', '=', 'products.id')
+            ->where('orders.tenant_id', $tenantId)
+            ->where('orders.status', '!=', 'cancelled')
+            ->whereNull('orders.deleted_at')
+            ->whereBetween('orders.created_at', [
+                Carbon::parse($startDate)->startOfDay(),
+                Carbon::parse($endDate)->endOfDay(),
+            ])
+            ->selectRaw('SUM(order_items.subtotal - (products.cost_price * order_items.quantity)) as profit')
+            ->value('profit');
+
+        // Bénéfice Net = Marge brute sur ventes − Charges
+        $netProfit = $grossProfit - $expenses;
 
         // Daily breakdown for charts
         $dailyRevenues = DB::table('orders')
@@ -210,11 +225,12 @@ class ReportController extends Controller
         return response()->json([
             'success' => true,
             'data' => [
-                'period' => $period,
-                'revenues' => $revenues,
-                'expenses' => $expenses,
-                'net_profit' => $netProfit,
-                'chart_data' => $chartData,
+                'period'       => $period,
+                'revenues'     => $revenues,
+                'expenses'     => $expenses,
+                'gross_profit' => $grossProfit,          // (prix vente − prix achat) sans charges
+                'net_profit'   => $netProfit,            // gross_profit − charges
+                'chart_data'   => $chartData,
             ]
         ]);
     }
@@ -226,39 +242,52 @@ class ReportController extends Controller
     {
         abort_unless($request->user()->isTenantAdmin(), 403, 'Accès réservé aux administrateurs.');
         $tenantId = $request->user()->tenant_id;
-        $perPage = $request->query('per_page', 15);
+        $perPage    = $request->query('per_page', 15);
+        $typeFilter = $request->query('type'); // 'product' | 'material' | null (tous)
 
-        // Calculate Global Totals first
+        // Tous les produits en stock (pour les totaux filtrés)
         $allProducts = Product::where('tenant_id', $tenantId)
             ->where('stock_quantity', '>', 0)
             ->get(['type', 'stock_quantity', 'selling_price', 'cost_price', 'id']);
 
-        $totalValuationSelling = $allProducts->sum(fn($p) => $p->stock_quantity * $p->selling_price);
-        $totalValuationCost = $allProducts->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
-        $materialValuation = $allProducts->where('type', 'material')->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
-        $productValuation = $allProducts->where('type', '!=', 'material')->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
+        // Sous-ensemble selon le filtre actif
+        $filtered = match($typeFilter) {
+            'material' => $allProducts->where('type', 'material'),
+            'product'  => $allProducts->where('type', '!=', 'material'),
+            default    => $allProducts,
+        };
 
-        // BOM Stock Valuation (Global)
-        $bomProductIds = \App\Models\Bom::where('tenant_id', $tenantId)->pluck('product_id')->toArray();
-        $bomStockValuation = $allProducts->whereIn('id', $bomProductIds)->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
+        // Totaux appliqués au filtre actif
+        $totalValuationSelling = $filtered->sum(fn($p) => $p->stock_quantity * $p->selling_price);
+        $totalValuationCost    = $filtered->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
+        $materialValuation     = $filtered->where('type', 'material')->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
+        $productValuation      = $filtered->where('type', '!=', 'material')->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
 
-        // Paginated Details
+        // BOM — uniquement pertinent sur "Tous" ou "Produits"
+        $bomProductIds     = \App\Models\Bom::where('tenant_id', $tenantId)->pluck('product_id')->toArray();
+        $bomStockValuation = $typeFilter === 'material'
+            ? 0
+            : $filtered->whereIn('id', $bomProductIds)->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
+
+        // Paginated Details — avec filtre type si demandé
         $paginated = Product::where('tenant_id', $tenantId)
             ->where('stock_quantity', '>', 0)
+            ->when($typeFilter === 'material', fn($q) => $q->where('type', 'material'))
+            ->when($typeFilter === 'product',  fn($q) => $q->where('type', '!=', 'material'))
             ->orderByRaw('stock_quantity * cost_price DESC')
             ->paginate($perPage);
 
         $details = collect($paginated->items())->map(function ($item) {
             return [
-                'id' => $item->id,
-                'name' => $item->name,
-                'type' => $item->type,
-                'category' => $item->category,
-                'quantity' => $item->stock_quantity,
-                'unit' => $item->unit,
-                'cost_price' => $item->cost_price,
-                'selling_price' => $item->selling_price,
-                'valuation_cost' => $item->stock_quantity * ($item->cost_price ?? 0),
+                'id'                => $item->id,
+                'name'              => $item->name,
+                'type'              => $item->type,
+                'category'          => $item->category,
+                'quantity'          => $item->stock_quantity,
+                'unit'              => $item->unit,
+                'cost_price'        => $item->cost_price,
+                'selling_price'     => $item->selling_price,
+                'valuation_cost'    => $item->stock_quantity * ($item->cost_price ?? 0),
                 'valuation_selling' => $item->stock_quantity * $item->selling_price,
             ];
         });
@@ -268,18 +297,19 @@ class ReportController extends Controller
             'data' => [
                 'summary' => [
                     'total_valuation_selling' => $totalValuationSelling,
-                    'total_valuation_cost' => $totalValuationCost,
-                    'potential_profit' => $totalValuationSelling - $totalValuationCost,
-                    'materials_valuation' => $materialValuation,
-                    'products_valuation' => $productValuation,
-                    'bom_stock_valuation' => $bomStockValuation,
+                    'total_valuation_cost'    => $totalValuationCost,
+                    'potential_profit'        => $totalValuationSelling - $totalValuationCost,
+                    'materials_valuation'     => $materialValuation,
+                    'products_valuation'      => $productValuation,
+                    'bom_stock_valuation'     => $bomStockValuation,
+                    'active_filter'           => $typeFilter ?? 'all',
                 ],
                 'details' => $details,
                 'meta' => [
                     'current_page' => $paginated->currentPage(),
-                    'last_page' => $paginated->lastPage(),
-                    'total' => $paginated->total(),
-                    'per_page' => $paginated->perPage(),
+                    'last_page'    => $paginated->lastPage(),
+                    'total'        => $paginated->total(),
+                    'per_page'     => $paginated->perPage(),
                 ]
             ]
         ]);

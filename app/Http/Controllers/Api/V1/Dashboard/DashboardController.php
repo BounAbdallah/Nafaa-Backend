@@ -141,17 +141,27 @@ class DashboardController extends Controller
             });
 
         // 9. Répartition des ventes par catégorie pour la période
+        // Jointure LEFT JOIN sur categories pour récupérer le nom réel
         $salesByCategory = DB::table('order_items')
-            ->join('orders', 'order_items.order_id', '=', 'orders.id')
-            ->join('products', 'order_items.product_id', '=', 'products.id')
+            ->join('orders',    'order_items.order_id',   '=', 'orders.id')
+            ->join('products',  'order_items.product_id', '=', 'products.id')
+            ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
             ->where('orders.tenant_id', $tenantId)
             ->where('orders.status', '!=', 'cancelled')
             ->whereNull('orders.deleted_at')
             ->whereBetween('orders.created_at', [$startDate, $endDate])
             ->when($userId, fn($q) => $q->where('orders.user_id', $userId))
-            ->select('products.category', DB::raw('SUM(order_items.subtotal) as value'))
-            ->groupBy('products.category')
-            ->get();
+            ->select(
+                DB::raw('COALESCE(categories.name, products.category, \'Sans catégorie\') as category'),
+                DB::raw('SUM(order_items.subtotal) as value')
+            )
+            ->groupBy('categories.id', 'categories.name', 'products.category')
+            ->orderByDesc('value')
+            ->get()
+            ->map(fn($item) => [
+                'category' => $item->category,
+                'value'    => (float) $item->value,
+            ]);
 
         // 10. Top Clients pour la période
         $topCustomers = DB::table('orders')
