@@ -16,11 +16,17 @@ class OrderController extends Controller
 {
     public function index(Request $request)
     {
-        $tenantId = Auth::user()->tenant_id;
-        
+        $user     = Auth::user();
+        $tenantId = $user->tenant_id;
+
         $query = Order::where('tenant_id', $tenantId)
             ->with(['customer', 'user'])
             ->latest();
+
+        // Employees only see their own orders
+        if (!$user->isTenantAdmin()) {
+            $query->where('user_id', $user->id);
+        }
 
         if ($request->search) {
             $query->where('reference', 'like', "%{$request->search}%");
@@ -52,6 +58,7 @@ class OrderController extends Controller
 
     public function store(Request $request)
     {
+        abort_unless(Auth::user()->canDo('orders', 'create'), 403, 'Permission refusée : créer une commande.');
         $request->validate([
             'customer_id'    => 'nullable|exists:customers,id',
             'items'          => 'required|array|min:1',
@@ -159,6 +166,7 @@ class OrderController extends Controller
 
     public function destroy($id)
     {
+        abort_unless(Auth::user()->canDo('orders', 'delete'), 403, 'Permission refusée : supprimer une commande.');
         $tenantId = Auth::user()->tenant_id;
         $order = Order::where('tenant_id', $tenantId)->findOrFail($id);
 

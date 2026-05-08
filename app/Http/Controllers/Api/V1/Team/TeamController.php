@@ -147,6 +147,26 @@ class TeamController extends Controller
         ]);
     }
 
+    public function updatePermissions(Request $request, User $user): JsonResponse
+    {
+        $tenant = $request->user()->tenant;
+        abort_unless($request->user()->isTenantAdmin(), 403, 'Seul un admin peut modifier les permissions.');
+        abort_unless($user->tenant_id === $tenant->id, 403);
+        abort_if($user->isTenantAdmin(), 422, 'Impossible de modifier les permissions d\'un admin.');
+
+        $request->validate([
+            'permissions' => 'required|array',
+        ]);
+
+        $user->update(['module_permissions' => $request->permissions]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Permissions mises à jour.',
+            'data'    => ['permissions' => $user->module_permissions],
+        ]);
+    }
+
     public function remove(Request $request, User $user): JsonResponse
     {
         $tenant = $request->user()->tenant;

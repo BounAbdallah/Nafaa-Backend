@@ -15,6 +15,9 @@ class DashboardController extends Controller
     public function index(\Illuminate\Http\Request $request): JsonResponse
     {
         $tenantId = auth()->user()->tenant_id;
+        $user    = auth()->user();
+        $isAdmin = $user->isTenantAdmin();
+        $userId  = $isAdmin ? null : $user->id;
         $now = Carbon::now();
         $startOfMonth = $now->copy()->startOfMonth();
         $startOfLastMonth = $now->copy()->subMonth()->startOfMonth();
@@ -28,6 +31,7 @@ class DashboardController extends Controller
         $revenueMonth = Order::where('tenant_id', $tenantId)
             ->where('status', '!=', 'cancelled')
             ->whereBetween('created_at', [$startDate, $endDate])
+            ->when($userId, fn($q) => $q->where('user_id', $userId))
             ->sum('total_amount');
 
         // 1b. Revenus mois dernier (pour comparaison, uniquement si période par défaut)
@@ -37,10 +41,11 @@ class DashboardController extends Controller
             $revenueLastMonth = Order::where('tenant_id', $tenantId)
                 ->where('status', '!=', 'cancelled')
                 ->whereBetween('created_at', [$startOfLastMonth, $endOfLastMonth])
+                ->when($userId, fn($q) => $q->where('user_id', $userId))
                 ->sum('total_amount');
 
-            $revenueGrowth = $revenueLastMonth > 0 
-                ? round((($revenueMonth - $revenueLastMonth) / $revenueLastMonth) * 100, 1) 
+            $revenueGrowth = $revenueLastMonth > 0
+                ? round((($revenueMonth - $revenueLastMonth) / $revenueLastMonth) * 100, 1)
                 : 0;
         }
 
@@ -48,6 +53,7 @@ class DashboardController extends Controller
         $ordersCountMonth = Order::where('tenant_id', $tenantId)
             ->where('status', '!=', 'cancelled')
             ->whereBetween('created_at', [$startDate, $endDate])
+            ->when($userId, fn($q) => $q->where('user_id', $userId))
             ->count();
 
         // 2b. Commandes mois dernier
@@ -56,10 +62,11 @@ class DashboardController extends Controller
             $ordersCountLastMonth = Order::where('tenant_id', $tenantId)
                 ->where('status', '!=', 'cancelled')
                 ->whereBetween('created_at', [$startOfLastMonth, $endOfLastMonth])
+                ->when($userId, fn($q) => $q->where('user_id', $userId))
                 ->count();
 
-            $ordersGrowth = $ordersCountLastMonth > 0 
-                ? round((($ordersCountMonth - $ordersCountLastMonth) / $ordersCountLastMonth) * 100, 1) 
+            $ordersGrowth = $ordersCountLastMonth > 0
+                ? round((($ordersCountMonth - $ordersCountLastMonth) / $ordersCountLastMonth) * 100, 1)
                 : 0;
         }
 
@@ -67,21 +74,23 @@ class DashboardController extends Controller
         // Note: Dans notre cas actuel, la plupart des ventes POS sont directes.
         $activeOrdersCount = Order::where('tenant_id', $tenantId)
             ->where('status', 'pending')
+            ->when($userId, fn($q) => $q->where('user_id', $userId))
             ->count();
 
         // 4. Produits en stock bas
-        $lowStockCount = Product::where('tenant_id', $tenantId)
+        $lowStockCount = $isAdmin ? Product::where('tenant_id', $tenantId)
             ->whereIn('type', ['product', 'material'])
             ->whereColumn('stock_quantity', '<=', 'stock_alert')
-            ->count();
+            ->count() : null;
 
         // 5. Total Clients
-        $totalCustomers = Customer::where('tenant_id', $tenantId)->count();
-        $totalProducts = Product::where('tenant_id', $tenantId)->count();
+        $totalCustomers = $isAdmin ? Customer::where('tenant_id', $tenantId)->count() : null;
+        $totalProducts  = $isAdmin ? Product::where('tenant_id', $tenantId)->count() : null;
 
         // 6. Commandes récentes
         $recentOrders = Order::with('customer:id,name')
             ->where('tenant_id', $tenantId)
+            ->when($userId, fn($q) => $q->where('user_id', $userId))
             ->latest()
             ->limit(5)
             ->get()
@@ -104,6 +113,7 @@ class DashboardController extends Controller
             ->where('orders.status', '!=', 'cancelled')
             ->whereNull('orders.deleted_at')
             ->whereBetween('orders.created_at', [$startDate, $endDate])
+            ->when($userId, fn($q) => $q->where('orders.user_id', $userId))
             ->select('products.name', DB::raw('SUM(order_items.quantity) as total_qty'), DB::raw('SUM(order_items.subtotal) as total_revenue'))
             ->groupBy('products.id', 'products.name')
             ->orderByDesc('total_qty')
@@ -117,6 +127,7 @@ class DashboardController extends Controller
             ->where('status', '!=', 'cancelled')
             ->whereNull('deleted_at')
             ->whereBetween('created_at', [$historyStart, $endDate])
+            ->when($userId, fn($q) => $q->where('user_id', $userId))
             ->select(DB::raw('DATE(created_at) as date'), DB::raw('SUM(total_amount) as total'), DB::raw('COUNT(*) as count'))
             ->groupBy('date')
             ->orderBy('date')
@@ -137,6 +148,7 @@ class DashboardController extends Controller
             ->where('orders.status', '!=', 'cancelled')
             ->whereNull('orders.deleted_at')
             ->whereBetween('orders.created_at', [$startDate, $endDate])
+            ->when($userId, fn($q) => $q->where('orders.user_id', $userId))
             ->select('products.category', DB::raw('SUM(order_items.subtotal) as value'))
             ->groupBy('products.category')
             ->get();
@@ -148,6 +160,7 @@ class DashboardController extends Controller
             ->where('orders.status', '!=', 'cancelled')
             ->whereNull('orders.deleted_at')
             ->whereBetween('orders.created_at', [$startDate, $endDate])
+            ->when($userId, fn($q) => $q->where('orders.user_id', $userId))
             ->select('customers.name', DB::raw('SUM(orders.total_amount) as total'), DB::raw('COUNT(orders.id) as count'))
             ->groupBy('customers.id', 'customers.name')
             ->orderByDesc('total')
@@ -161,6 +174,7 @@ class DashboardController extends Controller
             ->where('orders.status', '!=', 'cancelled')
             ->whereNull('orders.deleted_at')
             ->whereBetween('orders.created_at', [$startDate, $endDate])
+            ->when($userId, fn($q) => $q->where('orders.user_id', $userId))
             ->select('users.name', DB::raw('SUM(orders.total_amount) as total'))
             ->groupBy('users.id', 'users.name')
             ->orderByDesc('total')
@@ -173,12 +187,14 @@ class DashboardController extends Controller
             ->where('status', '!=', 'cancelled')
             ->whereNull('deleted_at')
             ->whereBetween('created_at', [$startDate, $endDate])
+            ->when($userId, fn($q) => $q->where('user_id', $userId))
             ->select('payment_method', DB::raw('COUNT(*) as count'), DB::raw('SUM(total_amount) as total'))
             ->groupBy('payment_method')
             ->get();
 
         return response()->json([
             'stats' => [
+                'is_admin' => $isAdmin,
                 'revenue_month' => (float) $revenueMonth,
                 'revenue_growth' => $revenueGrowth,
                 'orders_count_month' => $ordersCountMonth,

@@ -22,8 +22,11 @@ class UserResource extends JsonResource
             'last_login_at'     => $this->last_login_at?->toIso8601String(),
             'tenant_id'         => $this->tenant_id,
             'tenant'            => $this->whenLoaded('tenant', fn () => new TenantResource($this->tenant)),
-            'roles'             => $this->whenLoaded('roles', fn () => $this->getRoleNames()),
-            'created_at'        => $this->created_at->toIso8601String(),
+            'roles'              => $this->whenLoaded('roles', fn () => $this->getRoleNames()),
+            'module_permissions' => $this->isTenantAdmin()
+                ? \App\Models\User::fullPermissions()
+                : ($this->module_permissions ?? \App\Models\User::defaultEmployeePermissions()),
+            'created_at'         => $this->created_at->toIso8601String(),
         ];
     }
 }

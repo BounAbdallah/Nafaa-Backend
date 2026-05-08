@@ -148,7 +148,8 @@ Route::prefix('v1')->group(function () {
                 Route::get('/',                       [TeamController::class, 'index']);
                 Route::post('/invite',                [TeamController::class, 'invite']);
                 Route::get('/members/{user}',         [TeamController::class, 'show']);
-                Route::patch('/members/{user}/role',  [TeamController::class, 'updateRole']);
+                Route::patch('/members/{user}/role',        [TeamController::class, 'updateRole']);
+                Route::patch('/members/{user}/permissions', [TeamController::class, 'updatePermissions']);
                 Route::delete('/members/{user}',      [TeamController::class, 'remove']);
                 Route::get('/activity',               [TeamController::class, 'activity']);
             });

@@ -77,17 +77,24 @@ class ReportController extends Controller
      */
     public function dailySummary(Request $request): JsonResponse
     {
-        $tenantId = $request->user()->tenant_id;
+        $user     = $request->user();
+        $tenantId = $user->tenant_id;
         $startDate = $request->query('start_date', Carbon::today()->toDateString());
         $endDate = $request->query('end_date', Carbon::today()->toDateString());
-        
+
         $start = Carbon::parse($startDate)->startOfDay();
         $end = Carbon::parse($endDate)->endOfDay();
 
-        $orders = Order::where('tenant_id', $tenantId)
+        $query = Order::where('tenant_id', $tenantId)
             ->where('status', '!=', 'cancelled')
-            ->whereBetween('created_at', [$start, $end])
-            ->get();
+            ->whereBetween('created_at', [$start, $end]);
+
+        // Employees see only their own orders
+        if (!$user->isTenantAdmin()) {
+            $query->where('user_id', $user->id);
+        }
+
+        $orders = $query->get();
 
         $totalSales = $orders->sum('total_amount');
         $totalDiscount = $orders->sum('discount_amount');
@@ -133,6 +140,7 @@ class ReportController extends Controller
      */
     public function financialSummary(Request $request): JsonResponse
     {
+        abort_unless($request->user()->isTenantAdmin(), 403, 'Accès réservé aux administrateurs.');
         $tenantId = $request->user()->tenant_id;
         $period = $request->query('period', 'month'); // custom, week, month, year
         
@@ -216,6 +224,7 @@ class ReportController extends Controller
      */
     public function inventoryValuation(Request $request): JsonResponse
     {
+        abort_unless($request->user()->isTenantAdmin(), 403, 'Accès réservé aux administrateurs.');
         $tenantId = $request->user()->tenant_id;
         $perPage = $request->query('per_page', 15);
 
@@ -281,6 +290,7 @@ class ReportController extends Controller
      */
     public function teamPerformance(Request $request): JsonResponse
     {
+        abort_unless($request->user()->isTenantAdmin(), 403, 'Accès réservé aux administrateurs.');
         $tenantId = $request->user()->tenant_id;
         $startDate = $request->query('start_date', Carbon::now()->startOfMonth()->toDateString());
         $endDate = $request->query('end_date', Carbon::now()->endOfMonth()->toDateString());
@@ -314,6 +324,7 @@ class ReportController extends Controller
      */
     public function customerAnalytics(Request $request): JsonResponse
     {
+        abort_unless($request->user()->isTenantAdmin(), 403, 'Accès réservé aux administrateurs.');
         $tenantId = $request->user()->tenant_id;
         $startDate = $request->query('start_date', Carbon::now()->startOfMonth()->toDateString());
         $endDate = $request->query('end_date', Carbon::now()->endOfMonth()->toDateString());

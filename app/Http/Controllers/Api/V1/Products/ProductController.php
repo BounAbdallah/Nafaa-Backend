@@ -54,6 +54,7 @@ class ProductController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        abort_unless($request->user()->canDo('products', 'create'), 403, 'Permission refusée.');
         $tenantId = $request->user()->tenant_id;
         $data = $request->validate([
             'name'           => 'required|string|max:255',
@@ -148,6 +149,7 @@ class ProductController extends Controller
     public function update(Request $request, Product $product): JsonResponse
     {
         $this->authorizeTenant($request, $product);
+        abort_unless($request->user()->canDo('products', 'edit'), 403, 'Permission refusée.');
         $tenantId = $request->user()->tenant_id;
 
         $data = $request->validate([
@@ -191,6 +193,7 @@ class ProductController extends Controller
     public function destroy(Request $request, Product $product): JsonResponse
     {
         $this->authorizeTenant($request, $product);
+        abort_unless($request->user()->canDo('products', 'delete'), 403, 'Permission refusée.');
         $product->delete();
 
         return response()->json(['success' => true, 'message' => 'Produit supprimé.']);

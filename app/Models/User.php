@@ -25,6 +25,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'is_active',
         'block_reason',
         'last_login_at',
+        'module_permissions',
     ];
 
     protected $hidden = [
@@ -33,10 +34,11 @@ class User extends Authenticatable implements MustVerifyEmail
     ];
 
     protected $casts = [
-        'email_verified_at' => 'datetime',
-        'last_login_at'     => 'datetime',
-        'is_active'         => 'boolean',
-        'password'          => 'hashed',
+        'email_verified_at'  => 'datetime',
+        'last_login_at'      => 'datetime',
+        'is_active'          => 'boolean',
+        'password'           => 'hashed',
+        'module_permissions' => 'array',
     ];
 
     public function tenant(): BelongsTo
@@ -47,6 +49,56 @@ class User extends Authenticatable implements MustVerifyEmail
     public function isTenantAdmin(): bool
     {
         return $this->hasRole('admin');
+    }
+
+    /**
+     * Check if the user can perform an action on a module.
+     * Admins always have full access.
+     * For employees, checks module_permissions JSON.
+     * Default for employees with no permissions set: view-only on orders/pos.
+     */
+    public function canDo(string $module, string $action = 'view'): bool
+    {
+        if ($this->isTenantAdmin()) return true;
+
+        $perms = $this->module_permissions ?? [];
+        return (bool) ($perms[$module][$action] ?? false);
+    }
+
+    /**
+     * Returns the full permissions array, with admin defaults filled in.
+     */
+    public function getEffectivePermissions(): array
+    {
+        if ($this->isTenantAdmin()) {
+            return self::fullPermissions();
+        }
+        return $this->module_permissions ?? [];
+    }
+
+    public static function fullPermissions(): array
+    {
+        $modules = ['pos', 'products', 'orders', 'customers', 'suppliers', 'purchase_orders', 'expenses'];
+        $result = [];
+        foreach ($modules as $mod) {
+            $result[$mod] = ['view' => true, 'create' => true, 'edit' => true, 'delete' => true];
+        }
+        $result['reports'] = ['view' => true];
+        return $result;
+    }
+
+    public static function defaultEmployeePermissions(): array
+    {
+        return [
+            'pos'             => ['view' => true, 'create' => true, 'edit' => false, 'delete' => false],
+            'products'        => ['view' => true, 'create' => false, 'edit' => false, 'delete' => false],
+            'orders'          => ['view' => true, 'create' => true, 'edit' => false, 'delete' => false],
+            'customers'       => ['view' => true, 'create' => true, 'edit' => false, 'delete' => false],
+            'suppliers'       => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'purchase_orders' => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'expenses'        => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'reports'         => ['view' => true],
+        ];
     }
 
     public function scopeForTenant($query, int $tenantId)
