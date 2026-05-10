@@ -25,8 +25,7 @@ class VerifyEmailNotification extends VerifyEmail
             ->action('Vérifier mon adresse e-mail', $verificationUrl)
             ->line('Ce lien expirera dans 60 minutes.')
             ->line('Si vous n\'avez pas créé de compte, aucune action n\'est requise.')
-            ->salutation('L\'équipe Qiwam ERP — Noor Web Services')
-            ->markdown('vendor.notifications.email');
+            ->salutation('L\'équipe Qiwam ERP — Noor Web Services');
     }
 
     /**
