@@ -42,10 +42,17 @@ class VerifyEmailNotification extends VerifyEmail
             ]
         );
 
-        // Replace backend URL with frontend URL
+        // Extract id, hash and query string from backend URL
+        // Backend: https://qiwam.noorwebservices.com/api/v1/auth/email/verify/{id}/{hash}?expires=...&signature=...
+        // Frontend: https://app-qiwam.noorwebservices.com/auth/verify-email/{id}/{hash}?expires=...&signature=...
         $frontendUrl = rtrim(config('app.frontend_url', config('app.url')), '/');
         $appUrl      = rtrim(config('app.url'), '/');
 
-        return str_replace($appUrl, $frontendUrl, $backendUrl);
+        // Replace backend base URL + API path with frontend base URL + frontend path
+        return str_replace(
+            $appUrl . '/api/v1/auth/email/verify/',
+            $frontendUrl . '/auth/verify-email/',
+            $backendUrl
+        );
     }
 }
