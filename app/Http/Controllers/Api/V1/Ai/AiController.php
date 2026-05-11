@@ -65,19 +65,22 @@ class AiController extends Controller
                     'video/webm', 'video/mp4', 'application/octet-stream',
                 ]),
             ],
+            'language' => ['nullable', 'string', 'in:fr,wo,en,ar'],
         ]);
 
-        $file    = $request->file('audio');
-        $tmpPath = $file->getRealPath();
+        $file     = $request->file('audio');
+        $tmpPath  = $file->getRealPath();
+        $language = (string) ($request->input('language', 'fr') ?: 'fr');
 
         Log::debug('[AI] /voice incoming', [
             'mime'     => $file->getMimeType(),
             'ext'      => $file->getClientOriginalExtension(),
             'size_kb'  => round($file->getSize() / 1024, 1),
+            'language' => $language,
         ]);
 
         try {
-            $result = $this->orchestrator->handleVoice($tmpPath);
+            $result = $this->orchestrator->handleVoice($tmpPath, $language);
             return response()->json($result);
         } catch (\Throwable $e) {
             Log::error('[AI] /voice failed', ['error' => $e->getMessage()]);

@@ -34,6 +34,12 @@ class HuggingFaceClient
     private string $whisperModel;
     private string $whisperBaseUrl;
 
+    // ── Waxal — STT pour langues locales africaines (Wolof, etc.) ────────────
+    private string $waxalToken;
+    private string $waxalModel;
+    private string $waxalBaseUrl;
+    private string $waxalLang;
+
     private int $timeout;
     private int $maxRetries;
     private int $retryBuffer;
@@ -53,6 +59,12 @@ class HuggingFaceClient
         $this->whisperToken   = (string) (config('ai.whisper_token')    ?: config('ai.token') ?: config('ai.hf_token'));
         $this->whisperBaseUrl = rtrim((string) (config('ai.whisper_base_url') ?: 'https://api.groq.com/openai/v1'), '/');
         $this->whisperModel   = (string) config('ai.whisper_model', 'whisper-large-v3');
+
+        // ── Waxal (Wolof + langues africaines) ───────────────────────────────
+        $this->waxalToken   = (string) (config('ai.waxal_token') ?: config('ai.hf_token'));
+        $this->waxalBaseUrl = rtrim((string) (config('ai.waxal_base_url', 'https://router.huggingface.co/v1')), '/');
+        $this->waxalModel   = (string) config('ai.waxal_model', 'openai/whisper-large-v3');
+        $this->waxalLang    = (string) config('ai.waxal_lang',  'wo');
 
         $this->timeout     = (int) config('ai.timeout', 60);
         $this->maxRetries  = (int) config('ai.max_retries',    2);
@@ -145,6 +157,58 @@ class HuggingFaceClient
 
         $json = $response->json() ?? [];
         return ['text' => (string) ($json['text'] ?? '')];
+    }
+
+    /**
+     * Transcrit un fichier audio en Wolof (ou autre langue africaine) en
+     * utilisant le dataset Waxal de Google via Hugging Face Inference Providers.
+     *
+     * Modèle par défaut : openai/whisper-large-v3 avec language='wo' (Wolof).
+     * Pour facebook/mms-300m : définir AI_WAXAL_MODEL=facebook/mms-300m et
+     * AI_WAXAL_LANG=wol (ISO 639-3).
+     *
+     * @return array{text: string, language: string}
+     */
+    public function transcribeWolof(string $audioPath): array
+    {
+        if (empty($this->waxalToken)) {
+            Log::warning('[Waxal] HF_TOKEN non configuré — impossible de transcrire en Wolof.');
+            throw new \RuntimeException('Waxal: HF_TOKEN manquant. Configure AI_WAXAL_TOKEN ou HF_TOKEN dans .env.');
+        }
+
+        $audioBytes = file_get_contents($audioPath);
+
+        Log::debug('[Waxal] Transcription Wolof', [
+            'model'    => $this->waxalModel,
+            'lang'     => $this->waxalLang,
+            'base_url' => $this->waxalBaseUrl,
+            'size_kb'  => round(strlen($audioBytes) / 1024, 1),
+        ]);
+
+        $response = Http::withToken($this->waxalToken)
+            ->timeout($this->timeout)
+            ->attach('file', $audioBytes, 'recording.webm')
+            ->post("{$this->waxalBaseUrl}/audio/transcriptions", [
+                'model'           => $this->waxalModel,
+                'language'        => $this->waxalLang,
+                'response_format' => 'json',
+            ]);
+
+        if (! $response->successful()) {
+            Log::warning('[Waxal] Transcription failed', [
+                'status' => $response->status(),
+                'body'   => mb_substr($response->body(), 0, 500),
+            ]);
+            throw new \RuntimeException(
+                "Waxal API error: HTTP {$response->status()} — {$response->body()}"
+            );
+        }
+
+        $json = $response->json() ?? [];
+        return [
+            'text'     => (string) ($json['text'] ?? ''),
+            'language' => 'wo',
+        ];
     }
 
     /**

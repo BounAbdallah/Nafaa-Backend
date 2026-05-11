@@ -20,7 +20,7 @@ class AiOrchestrator
     ) {}
 
     private const SYSTEM_PROMPT = <<<TXT
-Tu es l'assistant intégré de Qiwam ERP.
+Tu es l'assistant intégré de Qiwam ERP — nommé "Waxal" (de l'expression Wolof "waxal" qui signifie "parle").
 
 RÈGLES STRICTES :
 - Tu réponds TOUJOURS en français, de manière concise et professionnelle.
@@ -78,6 +78,36 @@ Distinctions critiques (chaque exemple → 1 seul outil) :
 - "lance une production de 30 plats de X"        → launch_production
 
 Si la demande de l'utilisateur ne correspond à aucun outil, réponds simplement en français en 1-2 phrases sans inventer de données.
+
+SUPPORT WOLOF (Waxal) :
+L'utilisateur peut parler en Wolof ou en mélangeant Wolof et français (Wolof-Français).
+Comprends et traduis les termes commerciaux Wolof suivants :
+- "Jënd" / "jend"   = acheter / achat / commander
+- "Jaay" / "jaaye"  = vendre / vente
+- "Xaalis"          = argent / montant / prix
+- "Sëriñ bu baax"   = meilleur client
+- "Soxor" / "stok"  = stock / inventaire
+- "Jàng"            = apprendre / expliquer
+- "Nit" / "client"  = client / personne
+- "Liggéey"         = travail / production / activité
+- "Yëgël ma"        = explique-moi / liste-moi
+- "Am na"           = il y a / disponible
+- "Amul"            = il n'y a pas / rupture / épuisé
+- "Bari"            = beaucoup / grande quantité
+- "Tëy"             = aujourd'hui
+- "Bi jant bi"      = ce mois / this month
+- "Sàcc"            = perte / manque
+- "Bénéfice"        = bénéfice (terme souvent utilisé tel quel)
+- "Mbir"            = problème / situation
+- "Xam xam"         = information / données
+- "Dépense"         = dépense (utilisé tel quel en contexte commercial)
+
+Exemples de commandes vocales en Wolof :
+- "Yëgël ma soxor bi" → list_low_stock ou query_stock
+- "Jënd naa X" → peut indiquer un achat / create_expense
+- "Jaay naa X ci N FCFA" → create un ordre de vente / enregistre
+- "Client yi" → list_customers
+- "Xaalis bi tëy" → list_orders (chiffre d'affaires du jour)
 TXT;
 
     /**
@@ -215,23 +245,55 @@ TXT;
 
     /**
      * Transcribes audio then runs the full text pipeline.
-     * Utilise le modèle léger (voice_model) pour avoir plus de TPM disponibles.
+     *
+     * @param  string  $language  'fr' (défaut) | 'wo' (Wolof via Waxal)
+     * @return array{transcript:string, action:string, tool_result:?array, reply:string, language:string}
      */
-    public function handleVoice(string $audioPath): array
+    public function handleVoice(string $audioPath, string $language = 'fr'): array
     {
-        $whisper = $this->hf->transcribe($audioPath, 'fr');
-        $text    = (string) ($whisper['text'] ?? '');
+        // ── Transcription ─────────────────────────────────────────────────────
+        try {
+            if ($language === 'wo') {
+                // Waxal path — Hugging Face Inference Providers
+                $whisper = $this->hf->transcribeWolof($audioPath);
+                Log::info('[Waxal] Transcription Wolof OK', ['text_preview' => mb_substr($whisper['text'] ?? '', 0, 60)]);
+            } else {
+                // Groq Whisper (français / autres langues)
+                $whisper = $this->hf->transcribe($audioPath, $language);
+            }
+        } catch (\Throwable $e) {
+            // Si Waxal/HF échoue, on tente avec Groq en mode 'fr' en fallback
+            Log::warning('[Waxal] Transcription failed, trying Groq fallback', ['err' => $e->getMessage()]);
+            try {
+                $whisper = $this->hf->transcribe($audioPath, 'fr');
+            } catch (\Throwable $e2) {
+                return [
+                    'transcript'  => '',
+                    'action'      => 'none',
+                    'tool_result' => null,
+                    'reply'       => "Je n'ai pas pu transcrire l'audio. Vérifie ta connexion et réessaie.",
+                    'language'    => $language,
+                ];
+            }
+        }
+
+        $text = (string) ($whisper['text'] ?? '');
 
         if (trim($text) === '') {
             return [
                 'transcript'  => '',
                 'action'      => 'none',
                 'tool_result' => null,
-                'reply'       => "Je n'ai rien compris. Peux-tu réessayer ?",
+                'reply'       => $language === 'wo'
+                    ? "Amul ci audio bi. Réessaye — wax ak kaw."
+                    : "Je n'ai rien compris. Peux-tu réessayer ?",
+                'language'    => $language,
             ];
         }
 
         // isVoice=true → utilise llama-3.1-8b-instant (20k TPM vs 12k pour le 70B)
-        return $this->handleText($text, true);
+        $result = $this->handleText($text, true);
+        $result['language'] = $language;
+        return $result;
     }
 }

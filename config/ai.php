@@ -80,4 +80,36 @@ return [
     // Rétrocompatibilité — HF_TOKEN reste lisible si AI_TOKEN absent
     'hf_token'    => env('HF_TOKEN', ''),
     'hf_base_url' => env('HF_BASE_URL', 'https://router.huggingface.co/v1'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Waxal — Speech-to-Text pour les langues locales (Wolof…)
+    |--------------------------------------------------------------------------
+    | Waxal est le dataset vocal open-source de Google (février 2026) couvrant
+    | le Wolof et d'autres langues africaines. Le meilleur modèle disponible
+    | est whisper-large-v3 via HF Inference Providers avec language='wo'.
+    |
+    | Pour utiliser un modèle fine-tuné sur Waxal (ex: facebook/mms-300m) :
+    |   AI_WAXAL_MODEL=facebook/mms-300m
+    |   AI_WAXAL_LANG=wol          ← ISO 639-3 pour MMS
+    |
+    | Pour Whisper large-v3 (défaut) :
+    |   AI_WAXAL_MODEL=openai/whisper-large-v3
+    |   AI_WAXAL_LANG=wo           ← ISO 639-1 / BCP-47 pour Whisper
+    |
+    | Token : ton HF_TOKEN suffit. Obtiens-en un sur https://huggingface.co/settings/tokens
+    */
+    'waxal_model'    => env('AI_WAXAL_MODEL',    'openai/whisper-large-v3'),
+    'waxal_base_url' => env('AI_WAXAL_BASE_URL',  'https://router.huggingface.co/v1'),
+    'waxal_token'    => env('AI_WAXAL_TOKEN',     env('HF_TOKEN', '')),
+    'waxal_lang'     => env('AI_WAXAL_LANG',      'wo'),   // 'wo' pour Whisper, 'wol' pour MMS
+
+    /*
+    | Langues supportées pour la reconnaissance vocale.
+    | Clé = code langue frontend, valeur = config STT à utiliser.
+    */
+    'supported_languages' => [
+        'fr' => ['provider' => 'groq',  'lang_code' => 'fr'],
+        'wo' => ['provider' => 'waxal', 'lang_code' => env('AI_WAXAL_LANG', 'wo')],
+    ],
 ];
