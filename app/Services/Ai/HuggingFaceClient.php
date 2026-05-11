@@ -160,12 +160,22 @@ class HuggingFaceClient
     }
 
     /**
-     * Transcrit un fichier audio en Wolof (ou autre langue africaine) en
-     * utilisant le dataset Waxal de Google via Hugging Face Inference Providers.
+     * Transcrit un fichier audio en Wolof via l'API native Hugging Face.
      *
-     * Modèle par défaut : openai/whisper-large-v3 avec language='wo' (Wolof).
-     * Pour facebook/mms-300m : définir AI_WAXAL_MODEL=facebook/mms-300m et
-     * AI_WAXAL_LANG=wol (ISO 639-3).
+     * Whisper NE supporte PAS bien le Wolof (absent de son training set).
+     * On utilise à la place facebook/mms-1b-all (Meta Massively Multilingual
+     * Speech), qui couvre 1 000+ langues dont explicitement le Wolof (wol).
+     *
+     * L'API native HF pour l'inférence audio envoie l'audio en binaire brut
+     * (Content-Type: audio/webm) — ce n'est PAS l'endpoint OpenAI-compatible.
+     *
+     * Endpoint :
+     *   POST https://api-inference.huggingface.co/models/{model}
+     *   Authorization: Bearer {HF_TOKEN}
+     *   Content-Type: audio/webm
+     *   [body = raw audio bytes]
+     *
+     * Réponse : {"text": "..."} ou [{"generated_text": "..."}]
      *
      * @return array{text: string, language: string}
      */
@@ -178,37 +188,92 @@ class HuggingFaceClient
 
         $audioBytes = file_get_contents($audioPath);
 
-        Log::debug('[Waxal] Transcription Wolof', [
-            'model'    => $this->waxalModel,
-            'lang'     => $this->waxalLang,
-            'base_url' => $this->waxalBaseUrl,
-            'size_kb'  => round(strlen($audioBytes) / 1024, 1),
+        // Détermine le modèle : si on a changé le défaut vers un modèle Whisper,
+        // on force quand même facebook/mms-1b-all pour le Wolof.
+        $model = $this->waxalModel;
+        if (str_contains($model, 'whisper')) {
+            // Whisper ≠ Wolof → on bascule sur MMS
+            $model = 'facebook/mms-1b-all';
+        }
+
+        // L'API native HF Inference = endpoint direct du modèle (pas /v1/...)
+        $endpoint = "https://api-inference.huggingface.co/models/{$model}";
+
+        Log::debug('[Waxal] Transcription Wolof (MMS)', [
+            'model'   => $model,
+            'size_kb' => round(strlen($audioBytes) / 1024, 1),
         ]);
+
+        // Détecter le Content-Type audio réel
+        $mimeType = $this->detectAudioMime($audioPath);
 
         $response = Http::withToken($this->waxalToken)
             ->timeout($this->timeout)
-            ->attach('file', $audioBytes, 'recording.webm')
-            ->post("{$this->waxalBaseUrl}/audio/transcriptions", [
-                'model'           => $this->waxalModel,
-                'language'        => $this->waxalLang,
-                'response_format' => 'json',
-            ]);
+            ->withHeaders([
+                'Content-Type' => $mimeType,
+                // MMS : préciser la langue cible pour éviter l'auto-détection
+                'X-Language'   => 'wol',   // Wolof ISO 639-3
+            ])
+            ->withBody($audioBytes, $mimeType)
+            ->post($endpoint);
+
+        // Gérer le cas où le modèle est en cours de chargement (HTTP 503)
+        if ($response->status() === 503) {
+            $estimated = $response->json()['estimated_time'] ?? 20;
+            Log::info('[Waxal] Modèle en chargement HF', ['wait_s' => $estimated]);
+            // Court sleep puis retry unique
+            sleep(min((int) $estimated, 20));
+            $response = Http::withToken($this->waxalToken)
+                ->timeout($this->timeout)
+                ->withHeaders(['Content-Type' => $mimeType, 'X-Language' => 'wol'])
+                ->withBody($audioBytes, $mimeType)
+                ->post($endpoint);
+        }
 
         if (! $response->successful()) {
-            Log::warning('[Waxal] Transcription failed', [
+            Log::warning('[Waxal] Transcription MMS failed', [
                 'status' => $response->status(),
                 'body'   => mb_substr($response->body(), 0, 500),
             ]);
             throw new \RuntimeException(
-                "Waxal API error: HTTP {$response->status()} — {$response->body()}"
+                "Waxal/MMS API error: HTTP {$response->status()} — " . mb_substr($response->body(), 0, 200)
             );
         }
 
         $json = $response->json() ?? [];
+
+        // Réponse MMS peut être {"text": "..."} ou [{"generated_text": "..."}]
+        if (isset($json['text'])) {
+            $text = (string) $json['text'];
+        } elseif (is_array($json) && isset($json[0]['generated_text'])) {
+            $text = (string) $json[0]['generated_text'];
+        } else {
+            $text = '';
+            Log::warning('[Waxal] Format de réponse inattendu', ['json' => $json]);
+        }
+
         return [
-            'text'     => (string) ($json['text'] ?? ''),
+            'text'     => $text,
             'language' => 'wo',
         ];
+    }
+
+    /**
+     * Détecte le MIME type audio à partir de l'extension ou des magic bytes.
+     */
+    private function detectAudioMime(string $path): string
+    {
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        return match($ext) {
+            'mp3'  => 'audio/mpeg',
+            'mp4'  => 'audio/mp4',
+            'm4a'  => 'audio/mp4',
+            'ogg'  => 'audio/ogg',
+            'wav'  => 'audio/wav',
+            'flac' => 'audio/flac',
+            'aac'  => 'audio/aac',
+            default => 'audio/webm',
+        };
     }
 
     /**

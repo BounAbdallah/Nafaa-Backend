@@ -86,23 +86,25 @@ return [
     | Waxal — Speech-to-Text pour les langues locales (Wolof…)
     |--------------------------------------------------------------------------
     | Waxal est le dataset vocal open-source de Google (février 2026) couvrant
-    | le Wolof et d'autres langues africaines. Le meilleur modèle disponible
-    | est whisper-large-v3 via HF Inference Providers avec language='wo'.
+    | le Wolof et d'autres langues africaines.
     |
-    | Pour utiliser un modèle fine-tuné sur Waxal (ex: facebook/mms-300m) :
-    |   AI_WAXAL_MODEL=facebook/mms-300m
-    |   AI_WAXAL_LANG=wol          ← ISO 639-3 pour MMS
+    | IMPORTANT : Whisper NE supporte PAS bien le Wolof (absent de son training).
+    | On utilise facebook/mms-1b-all (Meta Massively Multilingual Speech) qui
+    | couvre 1 000+ langues dont le Wolof (code ISO 639-3 : wol).
     |
-    | Pour Whisper large-v3 (défaut) :
-    |   AI_WAXAL_MODEL=openai/whisper-large-v3
-    |   AI_WAXAL_LANG=wo           ← ISO 639-1 / BCP-47 pour Whisper
+    | L'API MMS utilise l'endpoint natif HF Inference (pas l'API OpenAI-compat.) :
+    |   POST https://api-inference.huggingface.co/models/facebook/mms-1b-all
+    |   Content-Type: audio/webm
+    |   Authorization: Bearer {HF_TOKEN}
     |
-    | Token : ton HF_TOKEN suffit. Obtiens-en un sur https://huggingface.co/settings/tokens
+    | Obtiens un token gratuit sur https://huggingface.co/settings/tokens
+    | Ajoute dans .env :
+    |   HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
     */
-    'waxal_model'    => env('AI_WAXAL_MODEL',    'openai/whisper-large-v3'),
-    'waxal_base_url' => env('AI_WAXAL_BASE_URL',  'https://router.huggingface.co/v1'),
-    'waxal_token'    => env('AI_WAXAL_TOKEN',     env('HF_TOKEN', '')),
-    'waxal_lang'     => env('AI_WAXAL_LANG',      'wo'),   // 'wo' pour Whisper, 'wol' pour MMS
+    'waxal_model'    => env('AI_WAXAL_MODEL',   'facebook/mms-1b-all'),
+    'waxal_base_url' => env('AI_WAXAL_BASE_URL', 'https://api-inference.huggingface.co'),
+    'waxal_token'    => env('AI_WAXAL_TOKEN',    env('HF_TOKEN', '')),
+    'waxal_lang'     => env('AI_WAXAL_LANG',     'wol'),   // ISO 639-3 pour MMS
 
     /*
     | Langues supportées pour la reconnaissance vocale.
