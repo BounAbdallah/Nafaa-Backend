@@ -57,6 +57,35 @@ class AdminTenantController extends Controller
         ]);
     }
 
+    public function show(Tenant $tenant): JsonResponse
+    {
+        $tenant->loadMissing(['owner', 'pack']);
+        $tenant->loadCount('users');
+
+        // Membres du tenant
+        $members = \App\Models\User::withoutGlobalScopes()
+            ->where('tenant_id', $tenant->id)
+            ->with('roles')
+            ->latest()
+            ->get()
+            ->map(fn ($u) => [
+                'id'                => $u->id,
+                'name'              => $u->name,
+                'email'             => $u->email,
+                'role'              => $u->roles->first()?->name ?? 'member',
+                'email_verified_at' => $u->email_verified_at,
+                'created_at'        => $u->created_at,
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'tenant'  => new TenantResource($tenant),
+                'members' => $members,
+            ],
+        ]);
+    }
+
     public function updateTenant(Request $request, Tenant $tenant): JsonResponse
     {
         $data = $request->validate([

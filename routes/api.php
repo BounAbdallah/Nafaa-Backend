@@ -101,6 +101,7 @@ Route::prefix('v1')->group(function () {
 
             // Gestion des espaces de travail (Tenants)
             Route::get('/tenants',                         [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'index']);
+            Route::get('/tenants/{tenant}',                [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'show']);
             Route::patch('/tenants/{tenant}',              [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'updateTenant']);
             Route::patch('/tenants/{tenant}/modules',      [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'updateModules']);
 
