@@ -29,9 +29,10 @@ class PackController extends Controller
             'price'       => 'required|numeric|min:0',
             'period'      => 'required|string|in:monthly,yearly',
             'features'    => 'nullable|array',
-            'limits'      => 'nullable|array',
-            'is_active'   => 'boolean',
-            'order'       => 'integer',
+            'features.*'  => 'string',
+            'limits'      => 'nullable',
+            'is_active'   => 'nullable|boolean',
+            'order'       => 'nullable|integer',
         ]);
 
         $data['slug'] = Str::slug($data['name']);
@@ -61,16 +62,19 @@ class PackController extends Controller
             'price'       => 'nullable|numeric|min:0',
             'period'      => 'nullable|string|in:monthly,yearly',
             'features'    => 'nullable|array',
-            'limits'      => 'nullable|array',
+            'features.*'  => 'string',
+            'limits'      => 'nullable',
             'is_active'   => 'nullable|boolean',
             'order'       => 'nullable|integer',
         ]);
 
-        if (isset($data['name'])) {
+        if (!empty($data['name'])) {
             $data['slug'] = Str::slug($data['name']);
         }
 
-        $pack->update(array_filter($data, fn($v) => $v !== null));
+        // Remove nulls but keep false and 0
+        $updateData = array_filter($data, fn($v) => $v !== null);
+        $pack->update($updateData);
 
         return response()->json([
             'success' => true,
