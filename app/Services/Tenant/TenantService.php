@@ -4,6 +4,7 @@ namespace App\Services\Tenant;
 
 use App\Models\Tenant;
 use App\Models\User;
+use App\Notifications\AccountCreatedNotification;
 use App\Repositories\Contracts\TenantRepositoryInterface;
 use App\Repositories\Contracts\UserRepositoryInterface;
 use Illuminate\Support\Facades\DB;
@@ -32,6 +33,16 @@ class TenantService
                 'is_active'    => false, // Pending Super Admin approval
             ]);
 
+            // Store country, currency and phone in settings at creation
+            $initialSettings = $tenant->settings ?? [];
+            if (!empty($data['country']))  $initialSettings['country']  = $data['country'];
+            if (!empty($data['currency'])) $initialSettings['currency'] = $data['currency'];
+            if (!empty($data['phone']))    $initialSettings['phone']    = $data['phone'];
+            if (!empty($initialSettings)) {
+                $tenant->settings = $initialSettings;
+                $tenant->save();
+            }
+
             if (isset($data['pack_id'])) {
                 $pack = \App\Models\Pack::find($data['pack_id']);
                 if ($pack) {
@@ -39,9 +50,9 @@ class TenantService
 
                     // Auto-apply pack features as enabled_modules immediately at creation
                     if (!empty($pack->features)) {
-                        $packUpdates['settings'] = [
-                            'enabled_modules' => $pack->features,
-                        ];
+                        $currentSettings = $tenant->settings ?? [];
+                        $currentSettings['enabled_modules'] = $pack->features;
+                        $packUpdates['settings'] = $currentSettings;
                     }
 
                     $tenant->update($packUpdates);
@@ -52,12 +63,25 @@ class TenantService
 
             $this->assignTenantAdminRole($user, $tenant);
 
-            // Notify Super Admins
+            // 1. Envoyer l'e-mail de vérification (différé jusqu'ici)
+            try {
+                $user->sendEmailVerificationNotification();
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::warning('Failed to send verification email: ' . $e->getMessage());
+            }
+
+            // 2. Confirmer la création du compte à l'utilisateur
+            try {
+                $user->notify(new AccountCreatedNotification($tenant->fresh()));
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::warning('Failed to send account created notification: ' . $e->getMessage());
+            }
+
+            // 3. Notifier les super admins
             try {
                 $superAdmins = User::role('super_admin')->get();
                 \Illuminate\Support\Facades\Notification::send($superAdmins, new \App\Notifications\TenantCreatedNotification($tenant));
             } catch (\Exception $e) {
-                // Silently fail if mailer/notifications are not configured correctly
                 \Illuminate\Support\Facades\Log::warning('Failed to notify super admins of new tenant: ' . $e->getMessage());
             }
 

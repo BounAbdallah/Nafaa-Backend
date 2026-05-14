@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\TenantResource;
 use App\Models\Tenant;
+use App\Notifications\AccountActivatedNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -106,10 +107,12 @@ class AdminTenantController extends Controller
             'pack_id'   => ['nullable', 'exists:packs,id'],
         ]);
 
+        // ⚠️  Capturer l'état AVANT toute modification
+        $wasInactive = ! $tenant->is_active;
+
         if (isset($data['pack_id'])) {
             $pack = \App\Models\Pack::find($data['pack_id']);
             $data['plan'] = $pack->slug;
-            // Also apply pack features to tenant settings if needed
             if ($pack->features) {
                 $currentSettings = $tenant->settings ?? [];
                 $currentSettings['enabled_modules'] = $pack->features;
@@ -117,11 +120,29 @@ class AdminTenantController extends Controller
             }
         }
 
-        $tenant->update(array_filter($data, function($val) { return $val !== null; }));
+        // Appliquer tous les champs non-null (array_filter retire false → is_active géré séparément)
+        $filteredData = array_filter($data, fn($val) => $val !== null && $val !== false);
+        unset($filteredData['is_active']); // toujours géré ci-dessous
+        if (!empty($filteredData)) {
+            $tenant->update($filteredData);
+        }
 
-        // If is_active is explicitly set to false/true, update it (array_filter removes false, so we need to handle it manually)
+        // Gérer is_active séparément pour ne pas perdre la valeur false
         if ($request->has('is_active')) {
-            $tenant->update(['is_active' => $request->boolean('is_active')]);
+            $becomesActive = $request->boolean('is_active');
+            $tenant->update(['is_active' => $becomesActive]);
+
+            // Envoyer l'e-mail d'activation uniquement lors du 1er passage false → true
+            if ($wasInactive && $becomesActive) {
+                try {
+                    $owner = $tenant->fresh()->load('owner')->owner;
+                    if ($owner) {
+                        $owner->notify(new AccountActivatedNotification($tenant->fresh()));
+                    }
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::warning('Failed to send activation email: ' . $e->getMessage());
+                }
+            }
         }
 
         return response()->json([

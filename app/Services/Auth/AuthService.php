@@ -5,7 +5,7 @@ namespace App\Services\Auth;
 use App\Models\User;
 use App\Repositories\Contracts\UserRepositoryInterface;
 use Illuminate\Auth\Events\PasswordReset;
-use Illuminate\Auth\Events\Registered;
+// event(new Registered()) suppressed — emails triggered after onboarding
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -26,7 +26,9 @@ class AuthService
             'locale'   => $data['locale'] ?? 'fr',
         ]);
 
-        event(new Registered($user));
+        // ⚠️  Ne pas envoyer l'e-mail de vérification ici.
+        // Il sera déclenché une fois que l'utilisateur aura renseigné
+        // les informations de son entreprise (TenantService::createTenant).
 
         $token = $user->createToken('nafaa-auth-token')->plainTextToken;
 

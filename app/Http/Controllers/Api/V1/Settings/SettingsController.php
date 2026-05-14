@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Settings;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Api\V1\TenantResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -63,6 +64,8 @@ class SettingsController extends Controller
             'address'  => 'nullable|string|max:255',
             'phone'    => 'nullable|string|max:50',
             'email'    => 'nullable|email|max:255',
+            'country'  => 'nullable|string|max:10',
+            'currency' => 'nullable|string|max:10',
         ]);
 
         if ($request->hasFile('logo')) {
@@ -77,19 +80,24 @@ class SettingsController extends Controller
         $tenant->industry = $data['industry'];
         
         $settings = $tenant->settings ?? [];
-        $settings['ninea']   = $data['ninea'] ?? null;
-        $settings['rc']      = $data['rc'] ?? null;
-        $settings['address'] = $data['address'] ?? null;
-        $settings['phone']   = $data['phone'] ?? null;
-        $settings['email']   = $data['email'] ?? null;
+        $settings['ninea']    = $data['ninea']    ?? null;
+        $settings['rc']       = $data['rc']       ?? null;
+        $settings['address']  = $data['address']  ?? null;
+        $settings['phone']    = $data['phone']    ?? null;
+        $settings['email']    = $data['email']    ?? null;
+        $settings['country']  = $data['country']  ?? null;
+        $settings['currency'] = $data['currency'] ?? null;
         $tenant->settings = $settings;
 
         $tenant->save();
 
+        // Recharge avec les relations pour que le frontend ait un tenant complet
+        $fresh = $tenant->fresh()->load('pack');
+
         return response()->json([
             'success' => true,
             'message' => 'Paramètres de l\'espace mis à jour.',
-            'tenant'  => $tenant->fresh(),
+            'tenant'  => new TenantResource($fresh),
         ]);
     }
 }
