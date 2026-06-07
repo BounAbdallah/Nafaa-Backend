@@ -92,7 +92,7 @@ class PurchaseOrderController extends Controller
 
             foreach ($data['items'] as $item) {
                 $order->items()->create([
-                    'product_id'  => $item['product_id'] ?? null,
+                    'product_id'  => !empty($item['product_id']) ? (int) $item['product_id'] : null,
                     'description' => $item['description'],
                     'unit'        => $item['unit'],
                     'quantity'    => $item['quantity'],
