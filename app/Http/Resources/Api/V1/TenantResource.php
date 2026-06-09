@@ -20,7 +20,7 @@ class TenantResource extends JsonResource
             'pack_id'         => $this->pack_id,
             'plan_limits'     => $this->getPlanLimits(),
             'logo'            => $this->logo
-                                    ? (str_starts_with($this->logo, 'http') ? $this->logo : \Illuminate\Support\Facades\Storage::disk('public')->url($this->logo))
+                                    ? \App\Http\Resources\Api\V1\ProductResource::resolveStorageUrl($this->logo)
                                     : null,
             'is_active'       => $this->is_active,
             'is_on_trial'     => $this->isOnTrial(),

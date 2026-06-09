@@ -7,6 +7,28 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class ProductResource extends JsonResource
 {
+    /**
+     * Normalise un chemin/URL d'image vers une URL publique valide.
+     * Corrige les anciennes URLs localhost stockées en base (ex: http://localhost/storage/products/xxx.png).
+     */
+    public static function resolveStorageUrl(?string $path): ?string
+    {
+        if (!$path) return null;
+
+        // URL absolue avec un domaine différent de localhost → déjà correcte
+        if (str_starts_with($path, 'http') && !preg_match('#https?://localhost[:/]#', $path)) {
+            return $path;
+        }
+
+        // URL localhost (ancienne) → extraire le chemin relatif depuis /storage/
+        if (preg_match('#/storage/(.+)$#', $path, $m)) {
+            return \Illuminate\Support\Facades\Storage::disk('public')->url($m[1]);
+        }
+
+        // Chemin relatif stocké directement (cas normal après fix)
+        return \Illuminate\Support\Facades\Storage::disk('public')->url($path);
+    }
+
     public function toArray(Request $request): array
     {
         return [
@@ -34,7 +56,7 @@ class ProductResource extends JsonResource
             'stock_alert'    => $this->stock_alert,
             'is_low_stock'   => $this->isLowStock(),
             'image'          => $this->image
-                                    ? (str_starts_with($this->image, 'http') ? $this->image : \Illuminate\Support\Facades\Storage::disk('public')->url($this->image))
+                                    ? self::resolveStorageUrl($this->image)
                                     : null,
             'is_active'      => $this->is_active,
             'created_at'     => $this->created_at->toIso8601String(),
