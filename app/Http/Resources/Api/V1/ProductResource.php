@@ -13,7 +13,7 @@ class ProductResource extends JsonResource
      */
     public static function resolveStorageUrl(?string $path): ?string
     {
-        if (!$path) return null;
+        if (!$path || $path === '0' || $path === 'false') return null;
 
         // URL absolue avec un domaine différent de localhost → déjà correcte
         if (str_starts_with($path, 'http') && !preg_match('#https?://localhost[:/]#', $path)) {
