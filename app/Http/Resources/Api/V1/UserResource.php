@@ -14,7 +14,9 @@ class UserResource extends JsonResource
             'name'              => $this->name,
             'email'             => $this->email,
             'email_verified_at' => $this->email_verified_at?->toIso8601String(),
-            'avatar'            => $this->avatar,
+            'avatar'            => $this->avatar
+                                        ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->avatar)
+                                        : null,
             'phone'             => $this->phone,
             'locale'            => $this->locale ?? 'fr',
             'is_active'         => (bool) $this->is_active,

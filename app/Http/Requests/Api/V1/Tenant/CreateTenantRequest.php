@@ -43,8 +43,9 @@ class CreateTenantRequest extends FormRequest
                 Tenant::PLAN_BUSINESS,
                 Tenant::PLAN_ENTREPRISE,
             ])],
-            'pack_id'      => ['nullable', 'exists:packs,id'],
-            'country'      => ['nullable', 'string', 'max:10'],
+            'pack_id'       => ['nullable', 'exists:packs,id'],
+            'referral_code' => ['nullable', 'string', 'max:20'],
+            'country'       => ['nullable', 'string', 'max:10'],
             'currency'     => ['nullable', 'string', 'max:10'],
             'phone'        => [
                 'nullable',

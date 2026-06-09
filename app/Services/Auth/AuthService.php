@@ -66,7 +66,7 @@ class AuthService
         $this->userRepository->updateLastLogin($user);
 
         \App\Models\ActivityLog::record(
-            $user->tenant_id ?? 0,
+            $user->tenant_id ?? null,
             'login',
             $user->id,
             null,

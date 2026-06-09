@@ -28,6 +28,8 @@ class Tenant extends Model
         'trial_ends_at',
         'owner_id',
         'pack_id',
+        'ambassador_id',
+        'referral_code_used',
     ];
 
     protected $casts = [

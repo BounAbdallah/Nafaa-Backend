@@ -19,7 +19,9 @@ class TenantResource extends JsonResource
             'plan'            => $this->plan,
             'pack_id'         => $this->pack_id,
             'plan_limits'     => $this->getPlanLimits(),
-            'logo'            => $this->logo,
+            'logo'            => $this->logo
+                                    ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->logo)
+                                    : null,
             'is_active'       => $this->is_active,
             'is_on_trial'     => $this->isOnTrial(),
             'has_active_plan' => $this->hasActivePlan(),

@@ -46,6 +46,40 @@ class AdminSubscriptionController extends Controller
 
         $tenant->update($updates);
 
+        // ── Commission ambassadeur ─────────────────────────────────────────
+        if ($tenant->ambassador_id) {
+            $ambassador = $tenant->ambassador()->with('user')->first();
+            if ($ambassador && $ambassador->status === 'active') {
+                $subscriptionAmount = $tenant->pack?->price ?? 12500;
+                $commissionAmount   = round($subscriptionAmount * $ambassador->commission_rate / 100, 2);
+
+                $owner = $tenant->owner;
+
+                $referral = \App\Models\AmbassadorReferral::updateOrCreate(
+                    ['ambassador_id' => $ambassador->id, 'tenant_id' => $tenant->id],
+                    [
+                        'client_name'         => $owner?->name ?? $tenant->name,
+                        'client_email'        => $owner?->email ?? '',
+                        'subscription_plan'   => $tenant->plan,
+                        'subscription_amount' => $subscriptionAmount,
+                        'commission_rate'     => $ambassador->commission_rate,
+                        'commission_amount'   => $commissionAmount,
+                        'status'              => 'active',
+                        'activated_at'        => now(),
+                    ]
+                );
+
+                $ambassador->recalculate();
+
+                // Notifier l'ambassadeur
+                try {
+                    $ambassador->user->notify(new \App\Notifications\AmbassadorReferralActivatedNotification($referral));
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::warning('Ambassador notification failed: ' . $e->getMessage());
+                }
+            }
+        }
+
         return response()->json([
             'success' => true,
             'message' => "L'espace {$tenant->name} a été activé avec succès.",

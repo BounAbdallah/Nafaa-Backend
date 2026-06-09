@@ -2,6 +2,8 @@
 
 namespace App\Services\Tenant;
 
+use App\Models\Ambassador;
+use App\Models\AmbassadorReferral;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\AccountCreatedNotification;
@@ -22,15 +24,26 @@ class TenantService
         return DB::transaction(function () use ($user, $data) {
             $slug = $data['slug'] ?? $this->tenantRepository->generateUniqueSlug($data['name']);
 
+            // Résoudre le code ambassadeur si fourni
+            $ambassadorId = null;
+            if (!empty($data['referral_code'])) {
+                $ambassador = Ambassador::where('referral_code', $data['referral_code'])
+                    ->where('status', 'active')
+                    ->first();
+                $ambassadorId = $ambassador?->id;
+            }
+
             $tenant = $this->tenantRepository->create([
-                'name'         => $data['name'],
-                'slug'         => $slug,
-                'industry'     => $data['industry'],
-                'profile_type' => $data['profile_type'],
-                'plan'         => $data['plan'] ?? Tenant::PLAN_DEMARRAGE,
-                'pack_id'      => $data['pack_id'] ?? null,
-                'owner_id'     => $user->id,
-                'is_active'    => false, // Pending Super Admin approval
+                'name'               => $data['name'],
+                'slug'               => $slug,
+                'industry'           => $data['industry'],
+                'profile_type'       => $data['profile_type'],
+                'plan'               => $data['plan'] ?? Tenant::PLAN_DEMARRAGE,
+                'pack_id'            => $data['pack_id'] ?? null,
+                'owner_id'           => $user->id,
+                'is_active'          => false,
+                'ambassador_id'      => $ambassadorId,
+                'referral_code_used' => $data['referral_code'] ?? null,
             ]);
 
             // Store country, currency and phone in settings at creation
@@ -62,6 +75,26 @@ class TenantService
             $this->userRepository->update($user, ['tenant_id' => $tenant->id]);
 
             $this->assignTenantAdminRole($user, $tenant);
+
+            // 0. Créer le filleul ambassadeur immédiatement (status pending)
+            if ($ambassadorId) {
+                try {
+                    $ambassador = Ambassador::find($ambassadorId);
+                    if ($ambassador) {
+                        AmbassadorReferral::updateOrCreate(
+                            ['ambassador_id' => $ambassadorId, 'tenant_id' => $tenant->id],
+                            [
+                                'client_name'   => $user->name,
+                                'client_email'  => $user->email,
+                                'status'        => 'pending',
+                            ]
+                        );
+                        $ambassador->recalculate();
+                    }
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::warning('Ambassador referral creation failed: ' . $e->getMessage());
+                }
+            }
 
             // 1. Envoyer l'e-mail de vérification (différé jusqu'ici)
             try {

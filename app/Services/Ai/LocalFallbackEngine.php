@@ -148,6 +148,77 @@ class LocalFallbackEngine
             return ['tool' => 'list_boms', 'args' => []];
         }
 
+        // ── 7b. Création d'un produit ─────────────────────────────────────────
+        // "ajoute un produit : pain chocolat, 500 FCFA"
+        // "crée le produit Jus Bissap à 1500 FCFA"
+        // "nouveau produit Savon 800"
+        if ($this->matches($text, [
+            '(?:ajoute?|cree?|nouveau|nouvelle|enregistre?)\s+(?:un?|le|la)?\s*(?:produit|article|service)',
+        ])) {
+            // Essaie de parser : "... : NOM, PRIX FCFA" ou "... NOM à/au PRIX FCFA" ou "... NOM PRIX"
+            $name  = null;
+            $price = null;
+            $type  = 'product';
+
+            // Détecter si c'est un service
+            if ($this->matches($text, ['service'])) {
+                $type = 'service';
+            }
+
+            // Format "produit : NOM, PRIX" ou "produit : NOM à PRIX"
+            if (preg_match(
+                '/(?:produit|article|service)\s*:?\s*([^,\d\n]+?)\s*[,àa]\s*(\d[\d\s.,]*)\s*(?:fcfa|xof|f|€|eur)?/ui',
+                $original, $m
+            )) {
+                $name  = trim(preg_replace('/\s+/', ' ', $m[1]));
+                $price = (float) preg_replace('/[\s,]/', '', str_replace('.', '', $m[2]));
+            }
+            // Format "produit NOM PRIX FCFA" (prix en fin)
+            elseif (preg_match(
+                '/(?:produit|article|service)\s+(.+?)\s+(\d[\d\s.,]*)\s*(?:fcfa|xof|f\b|€|eur)?$/ui',
+                $original, $m
+            )) {
+                $name  = trim(preg_replace('/\s+/', ' ', $m[1]));
+                $price = (float) preg_replace('/[\s,]/', '', str_replace('.', '', $m[2]));
+            }
+
+            if ($name && $price !== null && $price >= 0) {
+                return ['tool' => 'create_product', 'args' => [
+                    'name'          => $name,
+                    'selling_price' => $price,
+                    'type'          => $type,
+                ]];
+            }
+
+            // Nom sans prix détectable : tenter quand même avec prix 0
+            if ($name) {
+                return ['tool' => 'create_product', 'args' => [
+                    'name' => $name,
+                    'selling_price' => 0,
+                    'type' => $type,
+                ]];
+            }
+        }
+
+        // ── 7c. Création d'une matière première ────────────────────────────────
+        // "ajoute la matière farine à 600 FCFA/kg"
+        if ($this->matches($text, [
+            '(?:ajoute?|cree?|enregistre?)\s+(?:un?|la|le)?\s*(?:matiere|ingredient|composant)',
+        ])) {
+            if (preg_match(
+                '/(?:matiere|ingredient|composant)\s*(?:premiere?)?\s*:?\s*([^,\d\n]+?)\s*[,àa]\s*(\d[\d\s.,]*)/ui',
+                $original, $m
+            )) {
+                $name  = trim($m[1]);
+                $price = (float) preg_replace('/[\s,]/', '', str_replace('.', '', $m[2]));
+                return ['tool' => 'create_product', 'args' => [
+                    'name'          => $name,
+                    'selling_price' => $price,
+                    'type'          => 'material',
+                ]];
+            }
+        }
+
         // ── 8. Produits (catalogue général) ──────────────────────────────────
         if ($this->matches($text, [
             'produit(s)?', 'article(s)?', 'catalogue',
@@ -517,6 +588,25 @@ class LocalFallbackEngine
             return count($items) . " client(s) :\n" . implode("\n", $lines);
         }
 
+        // ── Création produit ──────────────────────────────────────────────────
+        if (in_array($tool, ['create_product'], true)) {
+            if (($result['ok'] ?? false) === true) {
+                $typeLabel = match ($result['type'] ?? 'product') {
+                    'material' => 'Matière première',
+                    'service'  => 'Service',
+                    default    => 'Produit',
+                };
+                return sprintf(
+                    "✅ %s **%s** créé avec succès !\n• SKU : %s\n• Prix : %s FCFA / %s",
+                    $typeLabel,
+                    $result['product_name'] ?? '—',
+                    $result['sku'] ?? '—',
+                    number_format($result['selling_price'] ?? 0, 0, ',', ' '),
+                    $result['unit'] ?? 'pièce'
+                );
+            }
+        }
+
         // ── Défaut : utiliser le message du tool ──────────────────────────────
         return $result['message'] ?? 'Action effectuée.';
     }
@@ -526,6 +616,8 @@ class LocalFallbackEngine
     {
         $tips = implode("\n", [
             "• \"liste mes produits\" — voir le catalogue",
+            "• \"ajoute un produit : pain chocolat, 500 FCFA\" — créer un produit",
+            "• \"ajoute la matière farine à 600 FCFA\" — créer une matière première",
             "• \"stock de [produit]\" — vérifier un stock",
             "• \"produits en rupture\" — alertes stock faible",
             "• \"mes dépenses de ce mois\" — résumé financier",

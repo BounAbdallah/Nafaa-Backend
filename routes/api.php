@@ -22,6 +22,11 @@ use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\Production\BomController;
 use App\Http\Controllers\Api\V1\Production\ProductionController;
 use App\Http\Controllers\Api\V1\Ai\AiController;
+use App\Http\Controllers\Api\V1\PrintController;
+use App\Http\Controllers\Api\V1\ContactController;
+use App\Http\Controllers\Api\V1\NotificationController;
+use App\Http\Controllers\Api\V1\Ambassador\AmbassadorController;
+use App\Http\Controllers\Api\V1\Admin\AdminAmbassadorController;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 
@@ -50,6 +55,9 @@ Route::prefix('v1')->group(function () {
         $user->assignRole('super_admin');
         return response()->json(['success' => true, 'message' => "Vous êtes maintenant Super Admin."]);
     })->middleware('auth:sanctum');
+
+    // ─── Contact public (portail landing page) ───────────────────────────
+    Route::post('/contact', [ContactController::class, 'store'])->middleware('throttle:5,1');
 
     // ─── Public auth routes ───────────────────────────────────────────────
     Route::prefix('auth')->group(function () {
@@ -119,6 +127,21 @@ Route::prefix('v1')->group(function () {
                 Route::post('/{tenant}/payment', [$c, 'recordPayment']);
             });
 
+            // Ambassadeurs
+            Route::prefix('ambassadors')->group(function () {
+                Route::get('/',                         [AdminAmbassadorController::class, 'index']);
+                Route::post('/',                        [AdminAmbassadorController::class, 'store']);
+                Route::get('/{ambassador}',             [AdminAmbassadorController::class, 'show']);
+                Route::put('/{ambassador}',             [AdminAmbassadorController::class, 'update']);
+                Route::delete('/{ambassador}',          [AdminAmbassadorController::class, 'destroy']);
+                Route::post('/{ambassador}/mark-paid',  [AdminAmbassadorController::class, 'markPaid']);
+            });
+
+            // Messages de contact (portail)
+            Route::get('/contact-messages',              [\App\Http\Controllers\Api\V1\Admin\AdminContactController::class, 'index']);
+            Route::post('/contact-messages/{contactMessage}/read', [\App\Http\Controllers\Api\V1\Admin\AdminContactController::class, 'markRead']);
+            Route::delete('/contact-messages/{contactMessage}',    [\App\Http\Controllers\Api\V1\Admin\AdminContactController::class, 'destroy']);
+
             // Journal d'activité plateforme
             Route::get('/activity-logs', function() {
                 return response()->json([
@@ -128,6 +151,12 @@ Route::prefix('v1')->group(function () {
                         ->paginate(50)
                 ]);
             });
+        });
+
+        // ─── Ambassador routes ────────────────────────────────────────────
+        Route::prefix('ambassador')->middleware(['role:ambassador'])->group(function () {
+            Route::get('/dashboard',        [AmbassadorController::class, 'dashboard']);
+            Route::post('/change-password', [AmbassadorController::class, 'changePassword']);
         });
 
         // ─── Tenant-scoped routes (require tenant + verified) ─────────────
@@ -221,6 +250,12 @@ Route::prefix('v1')->group(function () {
                 Route::get('/{order}',            [OrderController::class, 'show']);
                 Route::delete('/{order}',         [OrderController::class, 'destroy']);
                 Route::get('/{order}/invoice',    [OrderController::class, 'downloadInvoice']);
+                Route::post('/{order}/print',     [PrintController::class, 'receipt']);
+            });
+
+            // Impression thermique
+            Route::prefix('print')->group(function () {
+                Route::post('/test', [PrintController::class, 'test']);
             });
 
             // Rapports
@@ -273,6 +308,13 @@ Route::prefix('v1')->group(function () {
                 Route::put('templates/{documentTemplate}',        [DocumentTemplateController::class, 'update']);
                 Route::delete('templates/{documentTemplate}',     [DocumentTemplateController::class, 'destroy']);
                 Route::post('templates/import-pdf',               [DocumentTemplateController::class, 'importPdf']);
+            });
+
+            // ─── Notifications ────────────────────────────────────────────────
+            Route::prefix('notifications')->group(function () {
+                Route::get('/',             [NotificationController::class, 'index']);
+                Route::post('/read-all',    [NotificationController::class, 'markAllRead']);
+                Route::post('/{id}/read',   [NotificationController::class, 'markRead']);
             });
 
             // Paramètres & Profil
