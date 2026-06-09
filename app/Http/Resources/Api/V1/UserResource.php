@@ -15,7 +15,7 @@ class UserResource extends JsonResource
             'email'             => $this->email,
             'email_verified_at' => $this->email_verified_at?->toIso8601String(),
             'avatar'            => $this->avatar
-                                        ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->avatar)
+                                        ? (str_starts_with($this->avatar, 'http') ? $this->avatar : \Illuminate\Support\Facades\Storage::disk('public')->url($this->avatar))
                                         : null,
             'phone'             => $this->phone,
             'locale'            => $this->locale ?? 'fr',

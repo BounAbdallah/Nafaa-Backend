@@ -33,7 +33,9 @@ class ProductResource extends JsonResource
             'stock_quantity' => $this->stock_quantity,
             'stock_alert'    => $this->stock_alert,
             'is_low_stock'   => $this->isLowStock(),
-            'image'          => $this->image ? asset('storage/' . $this->image) : null,
+            'image'          => $this->image
+                                    ? (str_starts_with($this->image, 'http') ? $this->image : \Illuminate\Support\Facades\Storage::disk('public')->url($this->image))
+                                    : null,
             'is_active'      => $this->is_active,
             'created_at'     => $this->created_at->toIso8601String(),
             'updated_at'     => $this->updated_at->toIso8601String(),
