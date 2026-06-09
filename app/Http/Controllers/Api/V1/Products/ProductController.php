@@ -173,12 +173,15 @@ class ProductController extends Controller
         ]);
 
         if ($request->hasFile('image')) {
-            // Supprimer l'ancienne image
-            if ($product->image) {
+            // Supprimer l'ancienne image si elle existe et est un chemin valide
+            if ($product->image && !str_starts_with($product->image, 'http') && $product->image !== '0') {
                 \Illuminate\Support\Facades\Storage::disk('public')->delete($product->image);
             }
             $path = $request->file('image')->store('products', 'public');
             $data['image'] = $path;
+        } else {
+            // Aucun nouveau fichier → ne pas toucher à l'image existante
+            unset($data['image']);
         }
 
         $product->update($data);
