@@ -28,6 +28,7 @@ class Tenant extends Model
         'trial_ends_at',
         'owner_id',
         'pack_id',
+        'custom_price',
         'ambassador_id',
         'referral_code_used',
     ];
@@ -37,6 +38,7 @@ class Tenant extends Model
         'is_active'       => 'boolean',
         'plan_expires_at' => 'datetime',
         'trial_ends_at'   => 'datetime',
+        'custom_price'    => 'decimal:2',
     ];
 
     protected $hidden = [
@@ -98,6 +100,26 @@ class Tenant extends Model
     public function isOnTrial(): bool
     {
         return $this->trial_ends_at && $this->trial_ends_at->isFuture();
+    }
+
+    /**
+     * Prix mensuel effectif de l'abonnement :
+     * prix personnalisé (remise manuelle) s'il est défini, sinon prix du pack.
+     */
+    public function getEffectivePrice(): float
+    {
+        if ($this->custom_price !== null) {
+            return (float) $this->custom_price;
+        }
+
+        if (!$this->pack) {
+            return 0.0;
+        }
+
+        // Prix localisé selon le pays de l'espace (settings->country)
+        $this->pack->loadMissing('countryPrices');
+
+        return $this->pack->priceFor($this->settings['country'] ?? null)['price'];
     }
 
     public function hasActivePlan(): bool

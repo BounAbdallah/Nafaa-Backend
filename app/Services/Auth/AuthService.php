@@ -70,7 +70,7 @@ class AuthService
             'login',
             $user->id,
             null,
-            [],
+            ['user_agent' => substr((string) request()->userAgent(), 0, 500)],
             request()->ip()
         );
 

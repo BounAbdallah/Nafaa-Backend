@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Http\Controllers\Concerns\ScopesByCountry;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\TenantResource;
 use App\Models\Tenant;
@@ -12,9 +13,11 @@ use Illuminate\Validation\Rule;
 
 class AdminTenantController extends Controller
 {
+    use ScopesByCountry;
+
     public function index(Request $request): JsonResponse
     {
-        $query = Tenant::withoutGlobalScopes()
+        $query = $this->scopeTenantsByCountry(Tenant::withoutGlobalScopes(), $request->user())
             ->with(['owner', 'pack'])
             ->withCount('users')
             ->latest();
@@ -36,7 +39,7 @@ class AdminTenantController extends Controller
         }
 
         // Compteurs globaux (avant pagination)
-        $baseQuery    = Tenant::withoutGlobalScopes();
+        $baseQuery    = $this->scopeTenantsByCountry(Tenant::withoutGlobalScopes(), $request->user());
         $activeCount  = (clone $baseQuery)->where('is_active', true)->count();
         $inactiveCount = (clone $baseQuery)->where('is_active', false)->count();
 
@@ -60,6 +63,7 @@ class AdminTenantController extends Controller
 
     public function show(Tenant $tenant): JsonResponse
     {
+        $this->assertCanManageTenant(request()->user(), $tenant);
         $tenant->loadMissing(['owner', 'pack']);
         $tenant->loadCount('users');
 
@@ -89,6 +93,7 @@ class AdminTenantController extends Controller
 
     public function updateTenant(Request $request, Tenant $tenant): JsonResponse
     {
+        $this->assertCanManageTenant($request->user(), $tenant);
         $data = $request->validate([
             'profile_type' => ['nullable', 'string', Rule::in([
                 Tenant::PROFILE_MANUFACTURER,
@@ -158,6 +163,7 @@ class AdminTenantController extends Controller
      */
     public function updateModules(Request $request, Tenant $tenant): JsonResponse
     {
+        $this->assertCanManageTenant($request->user(), $tenant);
         $data = $request->validate([
             'enabled_modules'   => ['required', 'array'],
             'enabled_modules.*' => ['string'],

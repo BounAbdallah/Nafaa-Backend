@@ -14,12 +14,27 @@ class PackResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        // Localisation du prix : ?country=GN (ou pays de l'admin connecté)
+        $country = strtoupper((string) $request->get('country', '')) ?: $request->user()?->country_code;
+        $local   = $this->relationLoaded('countryPrices') || $this->exists
+            ? $this->priceFor($country)
+            : ['price' => (float) $this->price, 'currency' => 'XOF', 'is_override' => false];
+
         return [
             'id'          => $this->id,
             'name'        => $this->name,
             'slug'        => $this->slug,
             'description' => $this->description,
-            'price'       => $this->price,
+            'price'       => $local['price'],
+            'base_price'  => (float) $this->price,
+            'currency'    => $local['currency'],
+            'is_country_price' => $local['is_override'],
+            'country_prices'   => $this->whenLoaded('countryPrices', fn () => $this->countryPrices->map(fn ($cp) => [
+                'country_code' => $cp->country_code,
+                'price'        => (float) $cp->price,
+                'currency'     => $cp->currency,
+            ])),
+            'profile_types' => $this->profile_types ?? [],
             'period'      => $this->period,
             'features'    => $this->features ?? [],
             'limits'      => $this->limits ?? ['users' => 2, 'products' => 50, 'storage_gb' => 1],

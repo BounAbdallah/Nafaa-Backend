@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Http\Controllers\Concerns\ScopesByCountry;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\UserResource;
 use App\Models\User;
@@ -14,12 +15,16 @@ use Illuminate\Support\Facades\DB;
 
 class AdminUserController extends Controller
 {
+    use ScopesByCountry;
+
     public function index(Request $request): JsonResponse
     {
         $query = User::with(['tenant', 'roles'])
             ->withoutGlobalScopes()
             ->role('admin') // Only show shop administrators
             ->latest();
+
+        $this->scopeUsersByCountry($query, $request->user());
 
         if ($request->has('search')) {
             $search = $request->search;
@@ -60,9 +65,10 @@ class AdminUserController extends Controller
         ]);
     }
 
-    public function show(User $user): JsonResponse
+    public function show(Request $request, User $user): JsonResponse
     {
         $user->loadMissing(['tenant', 'roles']);
+        $this->assertCanManageUser($request->user(), $user);
 
         $logs = \App\Models\ActivityLog::where('user_id', $user->id)
             ->where('action', 'login')
@@ -84,6 +90,8 @@ class AdminUserController extends Controller
         $request->validate([
             'reason' => 'nullable|string|max:500',
         ]);
+
+        $this->assertCanManageUser($request->user(), $user);
 
         if ($user->hasRole('super_admin')) {
             return response()->json([
@@ -111,8 +119,10 @@ class AdminUserController extends Controller
         ]);
     }
 
-    public function unblock(User $user): JsonResponse
+    public function unblock(Request $request, User $user): JsonResponse
     {
+        $this->assertCanManageUser($request->user(), $user);
+
         $user->update([
             'is_active'    => true,
             'block_reason' => null,
@@ -130,25 +140,29 @@ class AdminUserController extends Controller
         ]);
     }
 
-    public function stats(): JsonResponse
+    public function stats(Request $request): JsonResponse
     {
+        $admin = $request->user();
+        $tenantQ = fn () => $this->scopeTenantsByCountry(Tenant::withoutGlobalScopes(), $admin);
+        $userQ   = fn () => $this->scopeUsersByCountry(User::withoutGlobalScopes(), $admin);
+
         // 1. Basic Stats
-        $totalTenants = Tenant::withoutGlobalScopes()->count();
-        $totalUsers   = User::withoutGlobalScopes()->count();
+        $totalTenants = $tenantQ()->count();
+        $totalUsers   = $userQ()->count();
         
         // 2. DB Size Mock (based on records)
         // In a real app, you might query INFORMATION_SCHEMA or use a library
         $mockDbSize = ($totalTenants * 1.2) + ($totalUsers * 0.05) + 15.4; // MB
         
         // 3. Tenants by Industry
-        $tenantsByType = Tenant::withoutGlobalScopes()
+        $tenantsByType = $tenantQ()
             ->select('industry', DB::raw('count(*) as count'))
             ->groupBy('industry')
             ->get()
             ->mapWithKeys(fn ($item) => [$item->industry => $item->count]);
 
         // 4. Registration Graph Data (Last 30 days)
-        $registrations = Tenant::withoutGlobalScopes()
+        $registrations = $tenantQ()
             ->where('created_at', '>=', now()->subDays(30))
             ->select(DB::raw('DATE(created_at) as date'), DB::raw('count(*) as count'))
             ->groupBy('date')
@@ -157,10 +171,10 @@ class AdminUserController extends Controller
 
         $stats = [
             'total_users'    => $totalUsers,
-            'active_users'   => User::withoutGlobalScopes()->where('is_active', true)->count(),
-            'blocked_users'  => User::withoutGlobalScopes()->where('is_active', false)->count(),
+            'active_users'   => $userQ()->where('is_active', true)->count(),
+            'blocked_users'  => $userQ()->where('is_active', false)->count(),
             'total_tenants'     => $totalTenants,
-            'pending_approvals' => Tenant::withoutGlobalScopes()->where('is_active', false)->count(),
+            'pending_approvals' => $tenantQ()->where('is_active', false)->count(),
             'db_size_mb'        => round($mockDbSize, 2),
             'tenants_by_type'   => $tenantsByType,
             'graph_data'        => $registrations,

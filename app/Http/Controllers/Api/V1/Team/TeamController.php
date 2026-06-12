@@ -37,6 +37,17 @@ class TeamController extends Controller
         ]);
 
         $tenant = $request->user()->tenant;
+
+        // ── Limite d'utilisateurs du pack ──
+        $maxUsers = (int) ($tenant->getPlanLimits()['users'] ?? -1);
+        if ($maxUsers !== -1 && $tenant->users()->count() >= $maxUsers) {
+            return response()->json([
+                'success' => false,
+                'message' => "Limite atteinte : votre pack autorise {$maxUsers} utilisateur" . ($maxUsers > 1 ? 's' : '') . ". Passez à un pack supérieur pour inviter plus de membres.",
+                'code'    => 'PLAN_LIMIT_USERS',
+            ], 422);
+        }
+
         $result = $this->teamService->invite($tenant, $request->only('name', 'email', 'role'), $request->user());
 
         return response()->json([

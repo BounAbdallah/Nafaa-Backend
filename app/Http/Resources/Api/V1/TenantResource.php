@@ -18,6 +18,8 @@ class TenantResource extends JsonResource
             'profile_type'    => $this->profile_type,
             'plan'            => $this->plan,
             'pack_id'         => $this->pack_id,
+            'custom_price'    => $this->custom_price !== null ? (float) $this->custom_price : null,
+            'effective_price' => $this->getEffectivePrice(),
             'plan_limits'     => $this->getPlanLimits(),
             'logo'            => $this->logo
                                     ? \App\Http\Resources\Api\V1\ProductResource::resolveStorageUrl($this->logo)

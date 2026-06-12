@@ -56,6 +56,18 @@ class ProductController extends Controller
     {
         abort_unless($request->user()->canDo('products', 'create'), 403, 'Permission refusée.');
         $tenantId = $request->user()->tenant_id;
+
+        // ── Limite de produits du pack ──
+        $tenant      = $request->user()->tenant;
+        $maxProducts = (int) ($tenant->getPlanLimits()['products'] ?? -1);
+        if ($maxProducts !== -1 && Product::where('tenant_id', $tenantId)->count() >= $maxProducts) {
+            return response()->json([
+                'success' => false,
+                'message' => "Limite atteinte : votre pack autorise {$maxProducts} produits. Passez à un pack supérieur pour en ajouter davantage.",
+                'code'    => 'PLAN_LIMIT_PRODUCTS',
+            ], 422);
+        }
+
         $data = $request->validate([
             'name'           => 'required|string|max:255',
             'sku'            => ['nullable', 'string', 'max:100',

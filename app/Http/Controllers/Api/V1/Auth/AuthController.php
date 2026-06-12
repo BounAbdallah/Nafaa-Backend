@@ -61,4 +61,39 @@ class AuthController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Mise à jour du profil de l'utilisateur connecté (nom, téléphone, mot de passe).
+     * Accessible à tous les rôles, y compris les admins plateforme sans tenant.
+     */
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'name'             => 'sometimes|string|max:255',
+            'phone'            => 'nullable|string|max:30',
+            'current_password' => 'nullable|string',
+            'password'         => 'nullable|string|min:8|confirmed',
+        ]);
+
+        if (!empty($data['password'])) {
+            if (empty($data['current_password']) || !\Illuminate\Support\Facades\Hash::check($data['current_password'], $user->password)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'current_password' => ['Le mot de passe actuel est incorrect.'],
+                ]);
+            }
+            $user->password = \Illuminate\Support\Facades\Hash::make($data['password']);
+        }
+
+        if (array_key_exists('name', $data))  $user->name  = $data['name'];
+        if (array_key_exists('phone', $data)) $user->phone = $data['phone'];
+        $user->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Profil mis à jour avec succès.',
+            'data'    => ['user' => new UserResource($user->fresh()->load('tenant', 'roles'))],
+        ]);
+    }
 }

@@ -27,7 +27,6 @@ use App\Http\Controllers\Api\V1\ContactController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\Ambassador\AmbassadorController;
 use App\Http\Controllers\Api\V1\Admin\AdminAmbassadorController;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -38,24 +37,6 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
     
-    // ─── EMERGENCY UTILS (Temporary) ──────────────────────────────────────
-    Route::get('/debug/migrate', function() {
-        try {
-            Artisan::call('migrate', ['--force' => true]);
-            return response()->json(['success' => true, 'output' => Artisan::output()]);
-        } catch (\Exception $e) {
-            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
-        }
-    });
-
-    Route::get('/debug/make-me-super-admin', function(\Illuminate\Http\Request $request) {
-        $user = $request->user();
-        if (!$user) return response()->json(['success' => false, 'message' => 'Non connecté.'], 401);
-        
-        $user->assignRole('super_admin');
-        return response()->json(['success' => true, 'message' => "Vous êtes maintenant Super Admin."]);
-    })->middleware('auth:sanctum');
-
     // ─── Contact public (portail landing page) ───────────────────────────
     Route::post('/contact', [ContactController::class, 'store'])->middleware('throttle:5,1');
 
@@ -78,6 +59,7 @@ Route::prefix('v1')->group(function () {
         Route::prefix('auth')->group(function () {
             Route::post('/logout', [AuthController::class, 'logout']);
             Route::get('/me',      [AuthController::class, 'me']);
+            Route::patch('/profile', [AuthController::class, 'updateProfile']);
             Route::post('/email/verify/{id}/{hash}', [EmailVerificationController::class, 'verify'])
                 ->middleware('signed')
                 ->name('verification.verify');
@@ -97,9 +79,14 @@ Route::prefix('v1')->group(function () {
         });
 
         // ─── Super Admin routes ───────────────────────────────────────────
-        Route::prefix('admin')->middleware(['role:super_admin'])->group(function () {
+        Route::prefix('admin')->middleware(['role:super_admin|country_admin'])->group(function () {
             // Statistiques plateforme
             Route::get('/users/stats', [AdminUserController::class, 'stats']);
+
+            // Monitoring des connexions
+            Route::get('/logins',                  [\App\Http\Controllers\Api\V1\Admin\AdminMonitoringController::class, 'logins']);
+            Route::get('/logins/frequency',        [\App\Http\Controllers\Api\V1\Admin\AdminMonitoringController::class, 'globalFrequency']);
+            Route::get('/logins/{user}/frequency', [\App\Http\Controllers\Api\V1\Admin\AdminMonitoringController::class, 'loginFrequency']);
 
             // Gestion des utilisateurs
             Route::get('/users',                  [AdminUserController::class, 'index']);
@@ -113,8 +100,29 @@ Route::prefix('v1')->group(function () {
             Route::patch('/tenants/{tenant}',              [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'updateTenant']);
             Route::patch('/tenants/{tenant}/modules',      [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'updateModules']);
 
-            // Gestion des Packs
-            Route::apiResource('/packs', \App\Http\Controllers\Api\V1\Admin\PackController::class);
+            // Gestion des Packs (lecture pour tous les admins, écriture super_admin)
+            Route::get('/packs',        [\App\Http\Controllers\Api\V1\Admin\PackController::class, 'index']);
+            Route::get('/packs/{pack}', [\App\Http\Controllers\Api\V1\Admin\PackController::class, 'show']);
+            // Prix par pays — accessible aux admins pays (forcés sur leur pays) et au super admin
+            Route::put('/packs/{pack}/country-price',                [\App\Http\Controllers\Api\V1\Admin\PackController::class, 'setCountryPrice']);
+            Route::delete('/packs/{pack}/country-price/{country}',   [\App\Http\Controllers\Api\V1\Admin\PackController::class, 'removeCountryPrice']);
+            Route::middleware(['role:super_admin'])->group(function () {
+                Route::post('/packs',           [\App\Http\Controllers\Api\V1\Admin\PackController::class, 'store']);
+                Route::match(['PUT', 'PATCH'], '/packs/{pack}', [\App\Http\Controllers\Api\V1\Admin\PackController::class, 'update']);
+                Route::delete('/packs/{pack}',  [\App\Http\Controllers\Api\V1\Admin\PackController::class, 'destroy']);
+
+                // Gestion des administrateurs plateforme (admins pays)
+                Route::prefix('admins')->group(function () {
+                    $a = \App\Http\Controllers\Api\V1\Admin\AdminManagementController::class;
+                    Route::get('/',                [$a, 'index']);
+                    Route::post('/',               [$a, 'store']);
+                    Route::get('/{admin}',           [$a, 'show']);
+                    Route::patch('/{admin}',         [$a, 'update']);
+                    Route::patch('/{admin}/block',   [$a, 'block']);
+                    Route::patch('/{admin}/unblock', [$a, 'unblock']);
+                    Route::delete('/{admin}',        [$a, 'destroy']);
+                });
+            });
 
             // Gestion des Abonnements & Monitoring
             Route::prefix('subscriptions')->group(function () {
@@ -125,10 +133,14 @@ Route::prefix('v1')->group(function () {
                 Route::get('/tracking',        [$c, 'tracking']);
                 Route::get('/{tenant}/history', [$c, 'history']);
                 Route::post('/{tenant}/payment', [$c, 'recordPayment']);
+                Route::patch('/{tenant}/trial',   [$c, 'setTrial']);
+                Route::patch('/{tenant}/pricing', [$c, 'setPricing']);
+                Route::get('/plan-requests',              [$c, 'planRequests']);
+                Route::patch('/plan-requests/{planRequest}', [$c, 'decidePlanRequest']);
             });
 
-            // Ambassadeurs
-            Route::prefix('ambassadors')->group(function () {
+            // Ambassadeurs (super_admin uniquement)
+            Route::prefix('ambassadors')->middleware(['role:super_admin'])->group(function () {
                 Route::get('/',                         [AdminAmbassadorController::class, 'index']);
                 Route::post('/',                        [AdminAmbassadorController::class, 'store']);
                 Route::get('/{ambassador}',             [AdminAmbassadorController::class, 'show']);
@@ -164,6 +176,14 @@ Route::prefix('v1')->group(function () {
 
             // Dashboard
             Route::get('/dashboard', [DashboardController::class, 'index']);
+
+            // Abonnement (espace courant)
+            Route::prefix('subscription')->group(function () {
+                $c = \App\Http\Controllers\Api\V1\Tenant\SubscriptionController::class;
+                Route::get('/',              [$c, 'show']);
+                Route::get('/packs',         [$c, 'packs']);
+                Route::post('/plan-request', [$c, 'requestPlanChange']);
+            });
 
             // ─── AI Assistant (Qiwam assistant) ──────────────────────────
             Route::prefix('ai')->group(function () {
