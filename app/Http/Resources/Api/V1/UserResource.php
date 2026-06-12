@@ -24,6 +24,7 @@ class UserResource extends JsonResource
             'last_login_at'     => $this->last_login_at?->toIso8601String(),
             'tenant_id'         => $this->tenant_id,
             'country_code'      => $this->country_code,
+            'report_frequency'  => $this->report_frequency,
             'tenant'            => $this->whenLoaded('tenant', fn () => new TenantResource($this->tenant)),
             'roles'              => $this->whenLoaded('roles', fn () => $this->getRoleNames()),
             'module_permissions' => $this->isTenantAdmin()

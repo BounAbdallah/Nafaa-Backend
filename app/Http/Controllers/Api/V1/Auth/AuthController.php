@@ -73,6 +73,7 @@ class AuthController extends Controller
         $data = $request->validate([
             'name'             => 'sometimes|string|max:255',
             'phone'            => 'nullable|string|max:30',
+            'report_frequency' => 'nullable|in:daily,weekly,monthly',
             'current_password' => 'nullable|string',
             'password'         => 'nullable|string|min:8|confirmed',
         ]);
@@ -88,6 +89,7 @@ class AuthController extends Controller
 
         if (array_key_exists('name', $data))  $user->name  = $data['name'];
         if (array_key_exists('phone', $data)) $user->phone = $data['phone'];
+        if ($request->exists('report_frequency')) $user->report_frequency = $data['report_frequency'] ?? null;
         $user->save();
 
         return response()->json([
