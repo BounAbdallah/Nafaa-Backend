@@ -35,7 +35,8 @@ class PeriodicReportNotification extends Notification
         $mail = (new MailMessage)
             ->subject($this->title)
             ->greeting('Bonjour ' . $notifiable->name . ',')
-            ->line("Voici votre rapport pour la période : **{$this->periodLabel}**.");
+            ->line("Voici votre rapport pour la période : **{$this->periodLabel}**.")
+            ->line('Vous le trouverez également en pièce jointe au format PDF.');
 
         foreach ($this->sections as $section) {
             $mail->line('---');
@@ -45,8 +46,27 @@ class PeriodicReportNotification extends Notification
             }
         }
 
-        return $mail->line('---')
+        $mail->line('---')
             ->line('Rapport généré automatiquement par Qiwam ERP. Vous pouvez changer la fréquence dans votre profil.');
+
+        // ── Pièce jointe PDF ──
+        try {
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.periodic-report', [
+                // dompdf ne sait pas rendre les émojis — on les retire du titre PDF
+                'title'         => trim(preg_replace('/[\x{1F000}-\x{1FFFF}\x{2600}-\x{27BF}]/u', '', $this->title)),
+                'periodLabel'   => $this->periodLabel,
+                'sections'      => $this->sections,
+                'recipientName' => $notifiable->name,
+            ]);
+
+            $filename = 'rapport-qiwam-' . now()->format('Y-m-d') . '.pdf';
+            $mail->attachData($pdf->output(), $filename, ['mime' => 'application/pdf']);
+        } catch (\Exception $e) {
+            // Le PDF est un bonus — l'e-mail part quand même si la génération échoue
+            \Illuminate\Support\Facades\Log::warning('PDF du rapport non généré : ' . $e->getMessage());
+        }
+
+        return $mail;
     }
 
     public function toArray(object $notifiable): array
