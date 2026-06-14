@@ -35,6 +35,33 @@ class ProductLookupController extends Controller
             ]);
         }
 
+        // ── 1. Catalogue LOCAL (prioritaire) — limité au pays du commerçant ──
+        $country = $request->user()?->tenant?->settings['country'] ?? null;
+        if ($country) {
+            $local = \App\Models\CatalogProduct::where('barcode', $code)
+                ->where('country_code', $country)
+                ->first();
+
+            if ($local) {
+                return response()->json([
+                    'success' => true,
+                    'data'    => [
+                        'found'     => true,
+                        'source'    => 'catalogue_local',
+                        'name'      => $local->name,
+                        'brand'     => $local->brand,
+                        'category'  => $local->category,
+                        'unit'      => $local->default_unit,
+                        'image_url' => $local->image
+                            ? \App\Http\Resources\Api\V1\ProductResource::resolveStorageUrl($local->image)
+                            : null,
+                        'barcode'   => $code,
+                    ],
+                ]);
+            }
+        }
+
+        // ── 2. Open Food Facts (base internationale) ──
         try {
             $response = Http::timeout(8)
                 ->withHeaders(['User-Agent' => 'QiwamERP/1.0 (contact@qiwam.app)'])
@@ -72,6 +99,7 @@ class ProductLookupController extends Controller
                 'success' => true,
                 'data'    => [
                     'found'     => ! empty($fullName),
+                    'source'    => 'open_food_facts',
                     'name'      => $fullName ?: null,
                     'brand'     => $brand ? explode(',', $brand)[0] : null,
                     'category'  => $this->mapCategory($p['categories_tags_fr'] ?? []),
