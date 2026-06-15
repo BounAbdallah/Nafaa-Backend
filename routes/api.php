@@ -124,6 +124,15 @@ Route::prefix('v1')->group(function () {
                 });
             });
 
+            // Catalogue de produits partagé (super admin + admins pays, scopé par pays)
+            Route::prefix('catalog')->group(function () {
+                $c = \App\Http\Controllers\Api\V1\Admin\CatalogProductController::class;
+                Route::get('/',                   [$c, 'index']);
+                Route::post('/',                  [$c, 'store']);
+                Route::match(['PUT', 'PATCH'], '/{catalogProduct}', [$c, 'update']);
+                Route::delete('/{catalogProduct}', [$c, 'destroy']);
+            });
+
             // Gestion des Abonnements & Monitoring
             Route::prefix('subscriptions')->group(function () {
                 $c = \App\Http\Controllers\Api\V1\Admin\AdminSubscriptionController::class;
@@ -211,6 +220,7 @@ Route::prefix('v1')->group(function () {
             // Produits & Services
             Route::prefix('products')->group(function () {
                 Route::get('/meta',      [ProductController::class, 'meta']);
+                Route::get('/lookup-barcode', [\App\Http\Controllers\Api\V1\Products\ProductLookupController::class, 'byBarcode']);
                 Route::get('/',          [ProductController::class, 'index']);
                 Route::post('/',         [ProductController::class, 'store']);
                 Route::get('/{product}', [ProductController::class, 'show']);
