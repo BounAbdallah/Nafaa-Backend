@@ -71,7 +71,7 @@ class ProductController extends Controller
         $data = $request->validate([
             'name'           => 'required|string|max:255',
             'sku'            => ['nullable', 'string', 'max:100',
-                                  Rule::unique('products')->where('tenant_id', $request->user()->tenant_id)],
+                                  Rule::unique('products')->where('tenant_id', $request->user()->tenant_id)->whereNull('deleted_at')],
             'description'    => 'nullable|string',
             'type'           => ['required', Rule::in(['product', 'service', 'material'])],
             'category'       => ['nullable', Rule::in(array_keys(Product::categories()))],
@@ -167,7 +167,7 @@ class ProductController extends Controller
         $data = $request->validate([
             'name'           => 'sometimes|string|max:255',
             'sku'            => ['nullable', 'string', 'max:100',
-                                  Rule::unique('products')->where('tenant_id', $request->user()->tenant_id)->ignore($product->id)],
+                                  Rule::unique('products')->where('tenant_id', $request->user()->tenant_id)->whereNull('deleted_at')->ignore($product->id)],
             'description'    => 'nullable|string',
             'type'           => ['sometimes', Rule::in(['product', 'service', 'material'])],
             'category'       => ['nullable', Rule::in(array_keys(Product::categories()))],
