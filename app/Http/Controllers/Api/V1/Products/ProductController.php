@@ -211,7 +211,74 @@ class ProductController extends Controller
         abort_unless($request->user()->canDo('products', 'delete'), 403, 'Permission refusée.');
         $product->delete();
 
-        return response()->json(['success' => true, 'message' => 'Produit supprimé.']);
+        return response()->json(['success' => true, 'message' => 'Produit déplacé dans la corbeille.']);
+    }
+
+    /**
+     * Liste les produits dans la corbeille (soft-deleted) du tenant.
+     */
+    public function trashed(Request $request): JsonResponse
+    {
+        $tenantId = $request->user()->tenant_id;
+
+        $query = Product::onlyTrashed()->where('tenant_id', $tenantId)->with('category')->latest('deleted_at');
+
+        if ($request->filled('search')) {
+            $s = $request->search;
+            $query->where(fn ($q) => $q->where('name', 'like', "%$s%")->orWhere('sku', 'like', "%$s%"));
+        }
+
+        $products = $query->paginate($request->get('per_page', 20));
+
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'products' => ProductResource::collection($products->items()),
+                'meta'     => [
+                    'total'        => $products->total(),
+                    'per_page'     => $products->perPage(),
+                    'current_page' => $products->currentPage(),
+                    'last_page'    => $products->lastPage(),
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Restaure un produit depuis la corbeille.
+     */
+    public function restore(Request $request, int $id): JsonResponse
+    {
+        abort_unless($request->user()->canDo('products', 'delete'), 403, 'Permission refusée.');
+
+        $product = Product::onlyTrashed()
+            ->where('tenant_id', $request->user()->tenant_id)
+            ->findOrFail($id);
+
+        $product->restore();
+
+        return response()->json(['success' => true, 'message' => 'Produit restauré.']);
+    }
+
+    /**
+     * Supprime définitivement un produit de la corbeille.
+     */
+    public function forceDelete(Request $request, int $id): JsonResponse
+    {
+        abort_unless($request->user()->canDo('products', 'delete'), 403, 'Permission refusée.');
+
+        $product = Product::onlyTrashed()
+            ->where('tenant_id', $request->user()->tenant_id)
+            ->findOrFail($id);
+
+        // Supprimer l'image associée si elle existe
+        if ($product->image && !str_starts_with($product->image, 'http') && $product->image !== '0') {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($product->image);
+        }
+
+        $product->forceDelete();
+
+        return response()->json(['success' => true, 'message' => 'Produit supprimé définitivement.']);
     }
     public function meta(Request $request): JsonResponse
     {

@@ -221,8 +221,11 @@ Route::prefix('v1')->group(function () {
             Route::prefix('products')->group(function () {
                 Route::get('/meta',      [ProductController::class, 'meta']);
                 Route::get('/lookup-barcode', [\App\Http\Controllers\Api\V1\Products\ProductLookupController::class, 'byBarcode']);
+                Route::get('/trashed',   [ProductController::class, 'trashed']);
                 Route::get('/',          [ProductController::class, 'index']);
                 Route::post('/',         [ProductController::class, 'store']);
+                Route::patch('/{id}/restore', [ProductController::class, 'restore']);
+                Route::delete('/{id}/force',  [ProductController::class, 'forceDelete']);
                 Route::get('/{product}', [ProductController::class, 'show']);
                 Route::get('/{product}/stats', [ProductController::class, 'stats']);
                 Route::match(['PUT', 'PATCH'], '/{product}', [ProductController::class, 'update']);
