@@ -140,6 +140,82 @@ class AdminUserController extends Controller
         ]);
     }
 
+    /**
+     * Supprime un utilisateur (corbeille / soft delete) — super admin uniquement.
+     */
+    public function destroy(Request $request, User $user): JsonResponse
+    {
+        if ($user->id === $request->user()->id) {
+            return response()->json(['success' => false, 'message' => 'Vous ne pouvez pas supprimer votre propre compte.'], 422);
+        }
+        if ($user->hasRole('super_admin')) {
+            return response()->json(['success' => false, 'message' => 'Impossible de supprimer un super administrateur.'], 403);
+        }
+
+        $user->tokens()->delete(); // révoque ses sessions
+        $user->delete();
+
+        return response()->json(['success' => true, 'message' => "L'utilisateur {$user->name} a été déplacé dans la corbeille."]);
+    }
+
+    /**
+     * Liste les utilisateurs supprimés (corbeille).
+     */
+    public function trashed(Request $request): JsonResponse
+    {
+        $query = User::onlyTrashed()->with(['tenant', 'roles'])->latest('deleted_at');
+
+        if ($search = $request->get('search')) {
+            $query->where(fn ($q) => $q->where('name', 'like', "%$search%")->orWhere('email', 'like', "%$search%"));
+        }
+
+        $users = $query->paginate($request->get('per_page', 20));
+
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'users' => collect($users->items())->map(fn ($u) => [
+                    'id'         => $u->id,
+                    'name'       => $u->name,
+                    'email'      => $u->email,
+                    'roles'      => $u->getRoleNames(),
+                    'tenant'     => $u->tenant?->name,
+                    'deleted_at' => $u->deleted_at?->toIso8601String(),
+                ]),
+                'meta'  => [
+                    'total'        => $users->total(),
+                    'per_page'     => $users->perPage(),
+                    'current_page' => $users->currentPage(),
+                    'last_page'    => $users->lastPage(),
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Restaure un utilisateur depuis la corbeille.
+     */
+    public function restore(int $id): JsonResponse
+    {
+        $user = User::onlyTrashed()->findOrFail($id);
+        $user->restore();
+
+        return response()->json(['success' => true, 'message' => "L'utilisateur {$user->name} a été restauré."]);
+    }
+
+    /**
+     * Supprime définitivement un utilisateur.
+     */
+    public function forceDelete(int $id): JsonResponse
+    {
+        $user = User::onlyTrashed()->findOrFail($id);
+        $name = $user->name;
+        $user->tokens()->delete();
+        $user->forceDelete();
+
+        return response()->json(['success' => true, 'message' => "Le compte {$name} a été supprimé définitivement."]);
+    }
+
     public function stats(Request $request): JsonResponse
     {
         $admin = $request->user();

@@ -195,4 +195,76 @@ class AdminMonitoringController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Sessions en cours : tokens Sanctum actifs (= utilisateurs connectés).
+     * « En ligne » si activité dans les 15 dernières minutes.
+     */
+    public function activeSessions(Request $request): JsonResponse
+    {
+        $onlineThreshold = now()->subMinutes(15);
+
+        $query = \Illuminate\Support\Facades\DB::table('personal_access_tokens as pat')
+            ->join('users', 'users.id', '=', 'pat.tokenable_id')
+            ->leftJoin('tenants', 'tenants.id', '=', 'users.tenant_id')
+            ->where('pat.tokenable_type', \App\Models\User::class)
+            ->whereNull('users.deleted_at')
+            ->select(
+                'pat.id', 'pat.created_at', 'pat.last_used_at',
+                'users.id as user_id', 'users.name', 'users.email',
+                'tenants.name as tenant_name'
+            )
+            ->orderByDesc('pat.last_used_at');
+
+        // Filtre pays (admin pays verrouillé, super admin via ?country=)
+        if ($country = $this->effectiveCountry($request->user())) {
+            $query->where('tenants.settings->country', $country);
+        }
+
+        $tokens = $query->paginate($request->get('per_page', 20));
+
+        $sessions = collect($tokens->items())->map(function ($t) use ($onlineThreshold) {
+            $last = $t->last_used_at ? \Carbon\Carbon::parse($t->last_used_at) : \Carbon\Carbon::parse($t->created_at);
+            return [
+                'id'            => $t->id,
+                'user'          => ['id' => $t->user_id, 'name' => $t->name, 'email' => $t->email],
+                'tenant'        => $t->tenant_name,
+                'started_at'    => \Carbon\Carbon::parse($t->created_at)->toIso8601String(),
+                'last_activity' => $last->toIso8601String(),
+                'is_online'     => $last->gte($onlineThreshold),
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'sessions'     => $sessions->values(),
+                'online_count' => $sessions->where('is_online', true)->count(),
+                'meta'         => [
+                    'total'        => $tokens->total(),
+                    'per_page'     => $tokens->perPage(),
+                    'current_page' => $tokens->currentPage(),
+                    'last_page'    => $tokens->lastPage(),
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Termine une session à distance (déconnecte l'utilisateur).
+     */
+    public function revokeSession(Request $request, int $id): JsonResponse
+    {
+        $token = \Laravel\Sanctum\PersonalAccessToken::with('tokenable.tenant')->findOrFail($id);
+
+        // Scoping pays : un admin pays ne révoque que les sessions de son pays
+        if ($country = $this->effectiveCountry($request->user())) {
+            $tenantCountry = $token->tokenable?->tenant?->settings['country'] ?? null;
+            abort_if($tenantCountry !== $country, 403, 'Session hors de votre pays.');
+        }
+
+        $token->delete();
+
+        return response()->json(['success' => true, 'message' => 'Session terminée — l\'utilisateur a été déconnecté.']);
+    }
 }

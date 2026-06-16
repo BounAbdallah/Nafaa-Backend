@@ -179,4 +179,86 @@ class AdminTenantController extends Controller
             'data'    => ['tenant' => new TenantResource($tenant->fresh())],
         ]);
     }
+
+    /**
+     * Supprime un espace (corbeille). Ses utilisateurs perdent l'accès.
+     */
+    public function destroy(Request $request, Tenant $tenant): JsonResponse
+    {
+        $this->assertCanManageTenant($request->user(), $tenant);
+
+        // Révoquer les sessions de tous les membres de l'espace
+        \App\Models\User::where('tenant_id', $tenant->id)->each(fn ($u) => $u->tokens()->delete());
+
+        $tenant->delete();
+
+        return response()->json(['success' => true, 'message' => "L'espace {$tenant->name} a été déplacé dans la corbeille."]);
+    }
+
+    /**
+     * Liste les espaces supprimés (corbeille).
+     */
+    public function trashed(Request $request): JsonResponse
+    {
+        $query = Tenant::onlyTrashed()->withoutGlobalScopes()->with('owner')->latest('deleted_at');
+
+        // Scoping pays
+        $this->scopeTenantsByCountry($query, $request->user());
+
+        if ($search = $request->get('search')) {
+            $query->where('name', 'like', "%$search%");
+        }
+
+        $tenants = $query->paginate($request->get('per_page', 20));
+
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'tenants' => collect($tenants->items())->map(fn ($t) => [
+                    'id'         => $t->id,
+                    'name'       => $t->name,
+                    'owner'      => $t->owner?->name,
+                    'owner_email'=> $t->owner?->email,
+                    'country'    => $t->settings['country'] ?? null,
+                    'deleted_at' => $t->deleted_at?->toIso8601String(),
+                ]),
+                'meta'  => [
+                    'total'        => $tenants->total(),
+                    'per_page'     => $tenants->perPage(),
+                    'current_page' => $tenants->currentPage(),
+                    'last_page'    => $tenants->lastPage(),
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Restaure un espace depuis la corbeille.
+     */
+    public function restore(Request $request, int $id): JsonResponse
+    {
+        $tenant = Tenant::onlyTrashed()->withoutGlobalScopes()->findOrFail($id);
+        $this->assertCanManageTenant($request->user(), $tenant);
+        $tenant->restore();
+
+        return response()->json(['success' => true, 'message' => "L'espace {$tenant->name} a été restauré."]);
+    }
+
+    /**
+     * Supprime définitivement un espace et tous ses utilisateurs.
+     */
+    public function forceDelete(Request $request, int $id): JsonResponse
+    {
+        $tenant = Tenant::onlyTrashed()->withoutGlobalScopes()->findOrFail($id);
+        $this->assertCanManageTenant($request->user(), $tenant);
+
+        $name = $tenant->name;
+        \App\Models\User::withTrashed()->where('tenant_id', $tenant->id)->each(function ($u) {
+            $u->tokens()->delete();
+            $u->forceDelete();
+        });
+        $tenant->forceDelete();
+
+        return response()->json(['success' => true, 'message' => "L'espace {$name} a été supprimé définitivement."]);
+    }
 }

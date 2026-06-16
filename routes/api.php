@@ -88,17 +88,36 @@ Route::prefix('v1')->group(function () {
             Route::get('/logins/frequency',        [\App\Http\Controllers\Api\V1\Admin\AdminMonitoringController::class, 'globalFrequency']);
             Route::get('/logins/{user}/frequency', [\App\Http\Controllers\Api\V1\Admin\AdminMonitoringController::class, 'loginFrequency']);
 
+            // Sessions en cours (monitoring temps réel) — super admin + admins pays (scopé)
+            Route::get('/sessions',        [\App\Http\Controllers\Api\V1\Admin\AdminMonitoringController::class, 'activeSessions']);
+            Route::delete('/sessions/{id}', [\App\Http\Controllers\Api\V1\Admin\AdminMonitoringController::class, 'revokeSession']);
+
             // Gestion des utilisateurs
             Route::get('/users',                  [AdminUserController::class, 'index']);
-            Route::get('/users/{user}',            [AdminUserController::class, 'show']);
             Route::patch('/users/{user}/block',   [AdminUserController::class, 'block']);
             Route::patch('/users/{user}/unblock', [AdminUserController::class, 'unblock']);
 
-            // Gestion des espaces de travail (Tenants)
-            Route::get('/tenants',                         [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'index']);
-            Route::get('/tenants/{tenant}',                [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'show']);
-            Route::patch('/tenants/{tenant}',              [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'updateTenant']);
-            Route::patch('/tenants/{tenant}/modules',      [\App\Http\Controllers\Api\V1\Admin\AdminTenantController::class, 'updateModules']);
+            // Espaces de travail (Tenants)
+            $tc = \App\Http\Controllers\Api\V1\Admin\AdminTenantController::class;
+            Route::get('/tenants',                    [$tc, 'index']);
+            Route::get('/tenants/trashed',            [$tc, 'trashed']);
+            Route::patch('/tenants/{id}/restore',     [$tc, 'restore']);
+            Route::delete('/tenants/{id}/force',      [$tc, 'forceDelete']);
+            Route::delete('/tenants/{tenant}',        [$tc, 'destroy']);
+            Route::patch('/tenants/{tenant}/modules', [$tc, 'updateModules']);
+            Route::patch('/tenants/{tenant}',         [$tc, 'updateTenant']);
+
+            // Corbeille utilisateurs + suppression (super admin uniquement)
+            Route::middleware(['role:super_admin'])->group(function () use ($tc) {
+                Route::get('/users/trashed',          [AdminUserController::class, 'trashed']);
+                Route::patch('/users/{id}/restore',   [AdminUserController::class, 'restore']);
+                Route::delete('/users/{id}/force',    [AdminUserController::class, 'forceDelete']);
+                Route::delete('/users/{user}',        [AdminUserController::class, 'destroy']);
+            });
+
+            // Détail utilisateur (après les routes spécifiques pour éviter les conflits)
+            Route::get('/users/{user}', [AdminUserController::class, 'show']);
+            Route::get('/tenants/{tenant}', [$tc, 'show']);
 
             // Gestion des Packs (lecture pour tous les admins, écriture super_admin)
             Route::get('/packs',        [\App\Http\Controllers\Api\V1\Admin\PackController::class, 'index']);
