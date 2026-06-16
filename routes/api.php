@@ -256,9 +256,14 @@ Route::prefix('v1')->group(function () {
 
             // Clients (CRM)
             Route::prefix('customers')->group(function () {
+                $ca = \App\Http\Controllers\Api\V1\Customers\CustomerAccountController::class;
                 Route::get('/meta',        [CustomerController::class, 'meta']);
+                Route::get('/debtors',     [$ca, 'debtors']); // ardoises
                 Route::get('/',            [CustomerController::class, 'index']);
                 Route::post('/',           [CustomerController::class, 'store']);
+                Route::get('/{customer}/account',  [$ca, 'show']);
+                Route::post('/{customer}/repay',   [$ca, 'repay']);
+                Route::post('/{customer}/deposit', [$ca, 'deposit']);
                 Route::get('/{customer}',  [CustomerController::class, 'show']);
                 Route::match(['PUT', 'PATCH'], '/{customer}', [CustomerController::class, 'update']);
                 Route::delete('/{customer}', [CustomerController::class, 'destroy']);
