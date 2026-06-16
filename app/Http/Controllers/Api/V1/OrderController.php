@@ -64,19 +64,42 @@ class OrderController extends Controller
             'items'          => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.quantity'   => 'required|numeric|min:0.001',
-            'payments'       => 'required|array|min:1',
+            'payments'       => 'nullable|array',
             'payments.*.method'  => 'required|string',
             'payments.*.amount'  => 'required|numeric|min:0',
             'payments.*.reference' => 'nullable|string',
+            'payment_mode'   => 'nullable|in:cash,credit,deposit', // cash (défaut), crédit (ardoise), avance
+            'due_date'       => 'nullable|date',                   // échéance du crédit (null = indéfinie)
             'discount_amount'=> 'nullable|numeric|min:0',
             'tax_amount'     => 'nullable|numeric|min:0',
             'notes'          => 'nullable|string',
         ]);
 
+        $mode = $request->get('payment_mode', 'cash');
+
+        // Le crédit/avance est une fonctionnalité optionnelle de l'abonnement
+        if (in_array($mode, ['credit', 'deposit'], true) && ! Auth::user()->tenant?->hasFeature('credit')) {
+            return response()->json([
+                'message' => 'La vente à crédit n\'est pas activée sur votre abonnement.',
+                'code'    => 'FEATURE_DISABLED',
+            ], 403);
+        }
+
+        // Crédit et avance exigent un client identifié
+        if (in_array($mode, ['credit', 'deposit'], true) && ! $request->customer_id) {
+            return response()->json([
+                'message' => 'Un client doit être sélectionné pour une vente à crédit ou sur avance.',
+            ], 422);
+        }
+        // Le mode comptant exige au moins un paiement
+        if ($mode === 'cash' && empty($request->payments)) {
+            return response()->json(['message' => 'Aucun paiement fourni.'], 422);
+        }
+
         $tenantId = Auth::user()->tenant_id;
         $userId   = Auth::id();
 
-        return DB::transaction(function () use ($request, $tenantId, $userId) {
+        return DB::transaction(function () use ($request, $tenantId, $userId, $mode) {
             $subtotal = 0;
             $orderItemsData = [];
 
@@ -104,19 +127,37 @@ class OrderController extends Controller
             $tax      = $request->tax_amount ?? 0;
             $discount = $request->discount_amount ?? 0;
             $total    = $subtotal + $tax - $discount;
-            
-            $paidAmount = collect($request->payments)->sum('amount');
-            $change     = max(0, $paidAmount - $total);
 
-            // Déterminer le statut de paiement
-            $paymentStatus = 'paid';
-            if ($paidAmount < $total) {
-                $paymentStatus = $paidAmount > 0 ? 'partial' : 'unpaid';
+            $payments  = $request->payments ?? [];
+            $cashPaid  = collect($payments)->sum('amount'); // argent réel reçu maintenant
+
+            $customer = $request->customer_id
+                ? \App\Models\Customer::where('tenant_id', $tenantId)->lockForUpdate()->find($request->customer_id)
+                : null;
+
+            // ── Vente sur AVANCE : on pioche dans le dépôt du client ──
+            if ($mode === 'deposit') {
+                if (! $customer || $customer->deposit < $total) {
+                    throw new \Exception("Avance insuffisante. Disponible : " . number_format($customer?->deposit ?? 0, 0, ',', ' ') . " FCFA.");
+                }
+                $paidAmount    = $total; // payé via l'avance
+                $change        = 0;
+                $paymentStatus = 'paid';
+                $primaryMethod = 'avance';
             }
-
-            $primaryMethod = $request->payments[0]['method'];
-            if (count($request->payments) > 1) {
-                $primaryMethod = 'multiple';
+            // ── Vente à CRÉDIT : le reste devient une dette ──
+            elseif ($mode === 'credit') {
+                $paidAmount    = min($cashPaid, $total);
+                $change        = 0;
+                $paymentStatus = $paidAmount > 0 ? 'partial' : 'unpaid';
+                $primaryMethod = $paidAmount > 0 ? 'credit_partial' : 'credit';
+            }
+            // ── Vente au COMPTANT (comportement habituel) ──
+            else {
+                $paidAmount    = $cashPaid;
+                $change        = max(0, $paidAmount - $total);
+                $paymentStatus = $paidAmount < $total ? ($paidAmount > 0 ? 'partial' : 'unpaid') : 'paid';
+                $primaryMethod = count($payments) > 1 ? 'multiple' : ($payments[0]['method'] ?? 'cash');
             }
 
             $order = Order::create([
@@ -137,14 +178,27 @@ class OrderController extends Controller
             ]);
 
             $order->items()->createMany($orderItemsData);
-            
-            // Enregistrer les paiements détaillés
-            foreach ($request->payments as $p) {
+
+            // Paiements réels détaillés
+            foreach ($payments as $p) {
                 $order->payments()->create([
                     'payment_method' => $p['method'],
                     'amount'         => $p['amount'],
                     'reference'      => $p['reference'] ?? null,
                 ]);
+            }
+
+            // ── Mouvements de compte client ──
+            $accountService = app(\App\Services\CustomerAccountService::class);
+            if ($mode === 'deposit') {
+                $accountService->record($customer, 'withdrawal', $total, $userId, $order, null, 'avance',
+                    "Achat payé sur avance — commande {$order->reference}");
+            } elseif ($mode === 'credit') {
+                $creditAmount = round($total - $paidAmount, 2);
+                if ($creditAmount > 0) {
+                    $accountService->record($customer, 'credit', $creditAmount, $userId, $order,
+                        $request->due_date, null, "Vente à crédit — commande {$order->reference}");
+                }
             }
 
             return response()->json([

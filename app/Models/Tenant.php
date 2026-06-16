@@ -103,6 +103,15 @@ class Tenant extends Model
     }
 
     /**
+     * L'espace dispose-t-il d'une fonctionnalité optionnelle (ex: 'credit') ?
+     * Source : settings->features (alimenté par le pack et/ou un override admin).
+     */
+    public function hasFeature(string $key): bool
+    {
+        return in_array($key, $this->settings['features'] ?? [], true);
+    }
+
+    /**
      * Prix mensuel effectif de l'abonnement :
      * prix personnalisé (remise manuelle) s'il est défini, sinon prix du pack.
      */

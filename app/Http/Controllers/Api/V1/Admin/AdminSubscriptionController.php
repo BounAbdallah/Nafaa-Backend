@@ -68,6 +68,11 @@ class AdminSubscriptionController extends Controller
         if ($tenant->pack && !empty($tenant->pack->features)) {
             $settings = $tenant->settings ?? [];
             $settings['enabled_modules'] = $tenant->pack->features;
+            // Fonctionnalités optionnelles (ex: crédit) apportées par le pack
+            $settings['features'] = array_values(array_unique(array_merge(
+                $settings['features'] ?? [],
+                $tenant->pack->addons ?? []
+            )));
             $updates['settings'] = $settings;
         }
 
@@ -598,6 +603,10 @@ class AdminSubscriptionController extends Controller
             if (!empty($pack->features)) {
                 $settings = $tenant->settings ?? [];
                 $settings['enabled_modules'] = $pack->features;
+                $settings['features'] = array_values(array_unique(array_merge(
+                    $settings['features'] ?? [],
+                    $pack->addons ?? []
+                )));
                 $updates['settings'] = $settings;
             }
 

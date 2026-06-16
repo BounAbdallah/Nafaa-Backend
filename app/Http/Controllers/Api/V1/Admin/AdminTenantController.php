@@ -167,10 +167,15 @@ class AdminTenantController extends Controller
         $data = $request->validate([
             'enabled_modules'   => ['required', 'array'],
             'enabled_modules.*' => ['string'],
+            'features'          => ['nullable', 'array'],          // fonctionnalités optionnelles (ex: credit)
+            'features.*'        => ['string'],
         ]);
 
         $settings = $tenant->settings ?? [];
         $settings['enabled_modules'] = $data['enabled_modules'];
+        if ($request->exists('features')) {
+            $settings['features'] = array_values($data['features'] ?? []);
+        }
         $tenant->update(['settings' => $settings]);
 
         return response()->json([
