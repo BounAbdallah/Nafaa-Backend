@@ -35,6 +35,7 @@ class PackResource extends JsonResource
                 'currency'     => $cp->currency,
             ])),
             'profile_types' => $this->profile_types ?? [],
+            'addons'        => $this->addons ?? [],
             'period'      => $this->period,
             'features'    => $this->features ?? [],
             'limits'      => $this->limits ?? ['users' => 2, 'products' => 50, 'storage_gb' => 1],

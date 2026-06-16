@@ -77,6 +77,14 @@ class OrderController extends Controller
 
         $mode = $request->get('payment_mode', 'cash');
 
+        // Le crédit/avance est une fonctionnalité optionnelle de l'abonnement
+        if (in_array($mode, ['credit', 'deposit'], true) && ! Auth::user()->tenant?->hasFeature('credit')) {
+            return response()->json([
+                'message' => 'La vente à crédit n\'est pas activée sur votre abonnement.',
+                'code'    => 'FEATURE_DISABLED',
+            ], 403);
+        }
+
         // Crédit et avance exigent un client identifié
         if (in_array($mode, ['credit', 'deposit'], true) && ! $request->customer_id) {
             return response()->json([

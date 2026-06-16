@@ -44,6 +44,8 @@ class PackController extends Controller
             'features.*'  => 'string',
             'profile_types'   => 'nullable|array',
             'profile_types.*' => 'in:manufacturer,reseller,wholesaler,service_provider',
+            'addons'      => 'nullable|array',
+            'addons.*'    => 'in:credit',
             'limits'      => 'nullable',
             'is_active'   => 'nullable|boolean',
             'order'       => 'nullable|integer',
@@ -81,6 +83,8 @@ class PackController extends Controller
             'features.*'  => 'string',
             'profile_types'   => 'nullable|array',
             'profile_types.*' => 'in:manufacturer,reseller,wholesaler,service_provider',
+            'addons'      => 'nullable|array',
+            'addons.*'    => 'in:credit',
             'limits'      => 'nullable',
             'is_active'   => 'nullable|boolean',
             'order'       => 'nullable|integer',
@@ -95,6 +99,9 @@ class PackController extends Controller
         // profile_types : un tableau vide signifie « tous les profils » → on le persiste
         if ($request->exists('profile_types')) {
             $updateData['profile_types'] = $data['profile_types'] ?: null;
+        }
+        if ($request->exists('addons')) {
+            $updateData['addons'] = $data['addons'] ?: null;
         }
         $pack->update($updateData);
 

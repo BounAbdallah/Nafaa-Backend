@@ -19,9 +19,20 @@ class CustomerAccountController extends Controller
         abort_if($customer->tenant_id !== Auth::user()->tenant_id, 403);
     }
 
+    /** Bloque si la fonctionnalité crédit n'est pas activée sur l'abonnement. */
+    private function assertFeatureEnabled(): void
+    {
+        abort_unless(
+            Auth::user()->tenant?->hasFeature('credit'),
+            403,
+            'La fonctionnalité « crédit / compte client » n\'est pas activée sur votre abonnement.'
+        );
+    }
+
     /** Solde + historique des mouvements d'un client. */
     public function show(Request $request, Customer $customer): JsonResponse
     {
+        $this->assertFeatureEnabled();
         $this->authorizeTenant($customer);
 
         $entries = $customer->accountEntries()->with('user:id,name')->paginate($request->get('per_page', 20));
@@ -57,6 +68,7 @@ class CustomerAccountController extends Controller
     /** Le client rembourse tout ou partie de son ardoise. */
     public function repay(Request $request, Customer $customer): JsonResponse
     {
+        $this->assertFeatureEnabled();
         $this->authorizeTenant($customer);
         abort_unless(Auth::user()->canDo('orders', 'create'), 403, 'Permission refusée.');
 
@@ -86,6 +98,7 @@ class CustomerAccountController extends Controller
     /** Le client dépose de l'argent d'avance à la boutique. */
     public function deposit(Request $request, Customer $customer): JsonResponse
     {
+        $this->assertFeatureEnabled();
         $this->authorizeTenant($customer);
         abort_unless(Auth::user()->canDo('orders', 'create'), 403, 'Permission refusée.');
 
@@ -108,6 +121,7 @@ class CustomerAccountController extends Controller
     /** Liste des clients qui doivent de l'argent (ardoises). */
     public function debtors(Request $request): JsonResponse
     {
+        $this->assertFeatureEnabled();
         $tenantId = Auth::user()->tenant_id;
 
         $query = Customer::where('tenant_id', $tenantId)

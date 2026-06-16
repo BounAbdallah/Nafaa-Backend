@@ -13,6 +13,7 @@ class Pack extends Model
         'price',
         'period',
         'features',
+        'addons',
         'profile_types',
         'limits',
         'is_active',
@@ -21,6 +22,7 @@ class Pack extends Model
 
     protected $casts = [
         'features'  => 'array',
+        'addons'    => 'array',
         'profile_types' => 'array',
         'limits'    => 'array',
         'is_active' => 'boolean',
