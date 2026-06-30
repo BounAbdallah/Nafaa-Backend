@@ -205,6 +205,45 @@ Route::prefix('v1')->group(function () {
             // Dashboard
             Route::get('/dashboard', [DashboardController::class, 'index']);
 
+            // Comptabilité — tableau de bord financier
+            Route::prefix('finance')->group(function () {
+                $fc = \App\Http\Controllers\Api\V1\FinanceController::class;
+                Route::get('/summary',      [$fc, 'summary']);
+                Route::get('/export/pdf',   [$fc, 'exportPdf']);
+                Route::get('/export/excel', [$fc, 'exportExcel']);
+            });
+
+            // Mouvements de trésorerie manuels (recettes, retraits, apports)
+            Route::prefix('cash-movements')->group(function () {
+                $cm = \App\Http\Controllers\Api\V1\CashMovementController::class;
+                Route::get('/',        [$cm, 'index']);
+                Route::post('/',       [$cm, 'store']);
+                Route::get('/meta',    [$cm, 'meta']);
+                Route::delete('/{cashMovement}', [$cm, 'destroy']);
+            });
+
+            // Catégories de dépenses personnalisées
+            Route::prefix('expense-categories')->group(function () {
+                $ec = \App\Http\Controllers\Api\V1\ExpenseCategoryController::class;
+                Route::get('/',                         [$ec, 'index']);
+                Route::post('/',                        [$ec, 'store']);
+                Route::delete('/{expenseCategory}',     [$ec, 'destroy']);
+            });
+
+            // ── Comptabilité Niveau 2 (journal, grand livre, balance, bilan) ──
+            Route::prefix('accounting')->group(function () {
+                $jc = \App\Http\Controllers\Api\V1\JournalController::class;
+                Route::get('/accounts',        [$jc, 'accounts']);
+                Route::post('/accounts',       [$jc, 'storeAccount']);
+                Route::post('/accounts/init',  [$jc, 'initChart']);
+                Route::get('/journal',         [$jc, 'index']);
+                Route::post('/journal',        [$jc, 'store']);
+                Route::delete('/journal/{journalEntry}', [$jc, 'destroy']);
+                Route::get('/ledger',          [$jc, 'ledger']);
+                Route::get('/balance',         [$jc, 'balance']);
+                Route::get('/bilan',           [$jc, 'bilan']);
+                Route::get('/resultat',        [$jc, 'resultat']);
+            });
             // Abonnement (espace courant)
             Route::prefix('subscription')->group(function () {
                 $c = \App\Http\Controllers\Api\V1\Tenant\SubscriptionController::class;
