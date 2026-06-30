@@ -205,6 +205,9 @@ Route::prefix('v1')->group(function () {
             // Dashboard
             Route::get('/dashboard', [DashboardController::class, 'index']);
 
+            // Comptabilité — tableau de bord financier
+            Route::get('/finance/summary', [\App\Http\Controllers\Api\V1\FinanceController::class, 'summary']);
+
             // Abonnement (espace courant)
             Route::prefix('subscription')->group(function () {
                 $c = \App\Http\Controllers\Api\V1\Tenant\SubscriptionController::class;

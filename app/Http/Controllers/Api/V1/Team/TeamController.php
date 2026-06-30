@@ -33,10 +33,18 @@ class TeamController extends Controller
         $request->validate([
             'name'  => 'required|string|max:255',
             'email' => 'required|email|max:255',
-            'role'  => ['required', Rule::in(['admin', 'employee', 'viewer'])],
+            'role'  => ['required', Rule::in(['admin', 'employee', 'viewer', 'comptable'])],
         ]);
 
         $tenant = $request->user()->tenant;
+
+        // ── Le rôle comptable exige la fonctionnalité Comptabilité ──
+        if ($request->role === 'comptable' && ! $tenant?->hasFeature('accounting')) {
+            return response()->json([
+                'message' => 'La comptabilité n\'est pas activée sur votre abonnement.',
+                'code'    => 'FEATURE_DISABLED',
+            ], 403);
+        }
 
         // ── Limite d'utilisateurs du pack ──
         $maxUsers = (int) ($tenant->getPlanLimits()['users'] ?? -1);
@@ -63,7 +71,7 @@ class TeamController extends Controller
     public function updateRole(Request $request, User $user): JsonResponse
     {
         $request->validate([
-            'role' => ['required', Rule::in(['admin', 'employee', 'viewer'])],
+            'role' => ['required', Rule::in(['admin', 'employee', 'viewer', 'comptable'])],
         ]);
 
         $tenant  = $request->user()->tenant;
