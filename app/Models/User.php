@@ -104,6 +104,24 @@ class User extends Authenticatable implements MustVerifyEmail
         ];
     }
 
+    /**
+     * Permissions par défaut d'un comptable : accès à la partie financière.
+     */
+    public static function comptablePermissions(): array
+    {
+        return [
+            'pos'             => ['view' => false, 'create' => false, 'edit' => false, 'delete' => false],
+            'products'        => ['view' => true,  'create' => false, 'edit' => false, 'delete' => false],
+            'orders'          => ['view' => true,  'create' => false, 'edit' => false, 'delete' => false],
+            'customers'       => ['view' => true,  'create' => false, 'edit' => false, 'delete' => false],
+            'suppliers'       => ['view' => true,  'create' => false, 'edit' => false, 'delete' => false],
+            'purchase_orders' => ['view' => true,  'create' => false, 'edit' => false, 'delete' => false],
+            'expenses'        => ['view' => true,  'create' => true,  'edit' => true,  'delete' => false],
+            'reports'         => ['view' => true],
+            'accounting'      => ['view' => true,  'create' => true,  'edit' => true,  'delete' => false],
+        ];
+    }
+
     public function scopeForTenant($query, int $tenantId)
     {
         return $query->where('tenant_id', $tenantId);
