@@ -81,6 +81,7 @@ class ProductController extends Controller
             ],
             'unit'           => ['required', Rule::in(Product::units())],
             'selling_price'  => 'required|numeric|min:0',
+            'min_price'      => 'nullable|numeric|min:0',
             'cost_price'     => 'nullable|numeric|min:0',
             'stock_quantity' => 'nullable|integer|min:0',
             'stock_alert'    => 'nullable|integer|min:0',
@@ -96,6 +97,7 @@ class ProductController extends Controller
         $product = Product::create([
             ...$data,
             'tenant_id'      => $request->user()->tenant_id,
+            'min_price'      => $data['min_price'] ?? 0,
             'cost_price'     => $data['cost_price'] ?? 0,
             'stock_quantity' => $data['type'] === 'service' ? 0 : ($data['stock_quantity'] ?? 0),
             'stock_alert'    => $data['stock_alert'] ?? 5,
@@ -177,6 +179,7 @@ class ProductController extends Controller
             ],
             'unit'           => ['sometimes', Rule::in(Product::units())],
             'selling_price'  => 'sometimes|numeric|min:0',
+            'min_price'      => 'nullable|numeric|min:0',
             'cost_price'     => 'nullable|numeric|min:0',
             'stock_quantity' => 'nullable|integer|min:0',
             'stock_alert'    => 'nullable|integer|min:0',

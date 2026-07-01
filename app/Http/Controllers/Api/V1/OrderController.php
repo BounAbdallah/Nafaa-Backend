@@ -64,6 +64,7 @@ class OrderController extends Controller
             'items'          => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.quantity'   => 'required|numeric|min:0.001',
+            'items.*.unit_price' => 'nullable|numeric|min:0',
             'payments'       => 'nullable|array',
             'payments.*.method'  => 'required|string',
             'payments.*.amount'  => 'required|numeric|min:0',
@@ -110,14 +111,23 @@ class OrderController extends Controller
                     throw new \Exception("Stock insuffisant pour le produit : {$product->name}");
                 }
 
-                $itemSubtotal = $item['quantity'] * $product->selling_price;
+                $unitPrice = isset($item['unit_price']) ? (float) $item['unit_price'] : $product->selling_price;
+
+                // Enforce minimum price floor
+                if ($product->min_price > 0 && $unitPrice < $product->min_price) {
+                    throw new \Exception(
+                        "Prix trop bas pour « {$product->name} ». Prix minimal : " . number_format($product->min_price, 0, ',', ' ') . ' FCFA.'
+                    );
+                }
+
+                $itemSubtotal = $item['quantity'] * $unitPrice;
                 $subtotal += $itemSubtotal;
 
                 $orderItemsData[] = [
                     'product_id'  => $product->id,
                     'description' => $product->name,
                     'quantity'    => $item['quantity'],
-                    'unit_price'  => $product->selling_price,
+                    'unit_price'  => $unitPrice,
                     'subtotal'    => $itemSubtotal,
                 ];
 

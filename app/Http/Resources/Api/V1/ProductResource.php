@@ -50,6 +50,7 @@ class ProductResource extends JsonResource
                 : (\App\Models\Product::categories()[$this->getRawOriginal('category') ?? ''] ?? $this->getRawOriginal('category')),
             'unit'           => $this->unit,
             'selling_price'  => $this->selling_price,
+            'min_price'      => $this->min_price,
             'cost_price'     => $this->cost_price,
             'margin'         => $this->margin,
             'stock_quantity' => $this->stock_quantity,
