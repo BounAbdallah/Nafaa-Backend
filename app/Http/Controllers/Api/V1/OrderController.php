@@ -6,6 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\User;
+use App\Notifications\LowStockNotification;
+use App\Notifications\NewOrderNotification;
+use App\Services\PushNotificationService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -132,6 +136,23 @@ class OrderController extends Controller
                 ];
 
                 $product->decrement('stock_quantity', $item['quantity']);
+
+                // Notify owner if stock just crossed the alert threshold
+                $freshQty = $product->fresh()->stock_quantity;
+                if ($product->type !== 'service' && $freshQty <= $product->stock_alert && $freshQty >= 0) {
+                    $owner = User::where('tenant_id', $tenantId)->where('role', 'owner')->first();
+                    if ($owner) {
+                        $owner->notify(new LowStockNotification($product->fresh()));
+                        try {
+                            app(PushNotificationService::class)->sendToUser(
+                                $owner,
+                                '⚠️ Stock faible',
+                                "« {$product->name} » — {$freshQty} restant(s).",
+                                ['url' => '/products/' . $product->id]
+                            );
+                        } catch (\Throwable) {}
+                    }
+                }
             }
 
             $tax      = $request->tax_amount ?? 0;
@@ -209,6 +230,20 @@ class OrderController extends Controller
                     $accountService->record($customer, 'credit', $creditAmount, $userId, $order,
                         $request->due_date, null, "Vente à crédit — commande {$order->reference}");
                 }
+            }
+
+            // Notify owner of new sale
+            $owner = User::where('tenant_id', $tenantId)->where('role', 'owner')->first();
+            if ($owner && $owner->id !== $userId) {
+                $owner->notify(new NewOrderNotification($order->reference, $total));
+                try {
+                    app(PushNotificationService::class)->sendToUser(
+                        $owner,
+                        '🛒 Nouvelle vente',
+                        "Commande {$order->reference} — " . number_format($total, 0, ',', ' ') . ' FCFA.',
+                        ['url' => '/orders']
+                    );
+                } catch (\Throwable) {}
             }
 
             return response()->json([

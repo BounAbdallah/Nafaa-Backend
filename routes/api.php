@@ -413,6 +413,15 @@ Route::prefix('v1')->group(function () {
                 Route::post('/{id}/read',   [NotificationController::class, 'markRead']);
             });
 
+            // ─── Push Notifications ───────────────────────────────────────────
+            Route::prefix('push')->group(function () {
+                $pc = \App\Http\Controllers\Api\V1\PushSubscriptionController::class;
+                Route::get('/vapid-key',   [$pc, 'vapidKey']);
+                Route::get('/status',      [$pc, 'status']);
+                Route::post('/subscribe',  [$pc, 'store']);
+                Route::post('/unsubscribe',[$pc, 'destroy']);
+            });
+
             // Paramètres & Profil
             Route::prefix('settings')->group(function () {
                 Route::put('/profile', [\App\Http\Controllers\Api\V1\Settings\SettingsController::class, 'updateProfile']);

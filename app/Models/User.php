@@ -49,6 +49,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->belongsTo(Tenant::class);
     }
 
+    public function pushSubscriptions(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(\App\Models\PushSubscription::class);
+    }
+
     public function isTenantAdmin(): bool
     {
         return $this->hasRole('admin');
