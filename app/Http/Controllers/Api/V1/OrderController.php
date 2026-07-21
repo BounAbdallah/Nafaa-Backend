@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\Tenant;
 use App\Models\User;
 use App\Notifications\LowStockNotification;
 use App\Notifications\NewOrderNotification;
@@ -140,7 +141,8 @@ class OrderController extends Controller
                 // Notify owner if stock just crossed the alert threshold
                 $freshQty = $product->fresh()->stock_quantity;
                 if ($product->type !== 'service' && $freshQty <= $product->stock_alert && $freshQty >= 0) {
-                    $owner = User::where('tenant_id', $tenantId)->where('role', 'owner')->first();
+                    $ownerId = Tenant::find($tenantId)?->owner_id;
+                    $owner = $ownerId ? User::find($ownerId) : null;
                     if ($owner) {
                         $owner->notify(new LowStockNotification($product->fresh()));
                         try {
@@ -233,7 +235,8 @@ class OrderController extends Controller
             }
 
             // Notify owner of new sale
-            $owner = User::where('tenant_id', $tenantId)->where('role', 'owner')->first();
+            $ownerId = Tenant::find($tenantId)?->owner_id;
+            $owner   = $ownerId ? User::find($ownerId) : null;
             if ($owner && $owner->id !== $userId) {
                 $owner->notify(new NewOrderNotification($order->reference, $total));
                 try {
