@@ -14,13 +14,15 @@ class Customer extends Model
         'tenant_id', 'name', 'email', 'phone', 'company',
         'type', 'address', 'city', 'country', 'notes',
         'total_spent', 'orders_count', 'is_active', 'account_balance',
+        'vat_rate',
     ];
 
     protected $casts = [
         'total_spent'     => 'float',
         'account_balance' => 'float',
-        'orders_count' => 'integer',
-        'is_active'    => 'boolean',
+        'orders_count'    => 'integer',
+        'is_active'       => 'boolean',
+        'vat_rate'        => 'float',
     ];
 
     public function tenant(): BelongsTo

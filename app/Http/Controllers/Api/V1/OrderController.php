@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Notifications\LowStockNotification;
 use App\Notifications\NewOrderNotification;
 use App\Services\PushNotificationService;
+use App\Services\VatService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -78,6 +79,7 @@ class OrderController extends Controller
             'due_date'       => 'nullable|date',                   // échéance du crédit (null = indéfinie)
             'discount_amount'=> 'nullable|numeric|min:0',
             'tax_amount'     => 'nullable|numeric|min:0',
+            'vat_rate'       => 'nullable|numeric|min:0|max:100',
             'notes'          => 'nullable|string',
         ]);
 
@@ -157,9 +159,8 @@ class OrderController extends Controller
                 }
             }
 
-            $tax      = $request->tax_amount ?? 0;
             $discount = $request->discount_amount ?? 0;
-            $total    = $subtotal + $tax - $discount;
+            $tax      = $request->tax_amount ?? 0; // montant taxe libre (hors TVA structurée)
 
             $payments  = $request->payments ?? [];
             $cashPaid  = collect($payments)->sum('amount'); // argent réel reçu maintenant
@@ -167,6 +168,18 @@ class OrderController extends Controller
             $customer = $request->customer_id
                 ? \App\Models\Customer::where('tenant_id', $tenantId)->lockForUpdate()->find($request->customer_id)
                 : null;
+
+            // TVA structurée (cascade : override > client > tenant)
+            $tenant     = \App\Models\Tenant::find($tenantId);
+            $vatSvc     = app(VatService::class);
+            $vatRate    = $vatSvc->resolveRate(
+                $request->has('vat_rate') ? (float) $request->vat_rate : null,
+                $customer,
+                $tenant
+            );
+            $subtotalHt = round($subtotal - $discount, 2);
+            $vatAmount  = $vatSvc->computeAmount($subtotalHt, $vatRate);
+            $total      = $subtotalHt + $vatAmount + $tax;
 
             // ── Vente sur AVANCE : on pioche dans le dépôt du client ──
             if ($mode === 'deposit') {
@@ -202,7 +215,10 @@ class OrderController extends Controller
                 'payment_status'  => $paymentStatus,
                 'payment_method'  => $primaryMethod,
                 'subtotal'        => $subtotal,
+                'subtotal_ht'     => $subtotalHt,
                 'tax_amount'      => $tax,
+                'vat_rate'        => $vatRate,
+                'vat_amount'      => $vatAmount,
                 'discount_amount' => $discount,
                 'total_amount'    => $total,
                 'paid_amount'     => $paidAmount,

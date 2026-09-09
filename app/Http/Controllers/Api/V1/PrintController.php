@@ -158,9 +158,15 @@ class PrintController extends Controller
             $esc .= $this->row2('Remise', '-' . number_format($order->discount_amount, 0, ',', ' ') . ' F', $chars);
         }
 
+        if (($order->vat_rate ?? 0) > 0) {
+            $vatLabel = 'TVA (' . $order->vat_rate . '%)';
+            $esc .= $this->row2($vatLabel, number_format($order->vat_amount, 0, ',', ' ') . ' F', $chars);
+        }
+
         // Total en gras
         $esc .= chr(0x1B) . chr(0x21) . chr(0x30);
-        $esc .= $this->row2('TOTAL', number_format($order->total_amount, 0, ',', ' ') . ' FCFA', $chars);
+        $totalLabel = (($order->vat_rate ?? 0) > 0) ? 'TOTAL TTC' : 'TOTAL';
+        $esc .= $this->row2($totalLabel, number_format($order->total_amount, 0, ',', ' ') . ' FCFA', $chars);
         $esc .= chr(0x1B) . chr(0x21) . chr(0x00);
         $esc .= $this->line('-', $chars);
 
