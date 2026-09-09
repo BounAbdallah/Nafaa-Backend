@@ -33,6 +33,6 @@ return [
 
     'from' => [
         'address' => env('MAIL_FROM_ADDRESS', 'noreply@nafaa.app'),
-        'name'    => env('MAIL_FROM_NAME', 'NAFAA'),
+        'name'    => env('MAIL_FROM_NAME', 'Qiwam'),
     ],
 ];

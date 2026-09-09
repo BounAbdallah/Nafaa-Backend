@@ -25,17 +25,32 @@ class ExpenseController extends Controller
         }
         if ($request->filled('category'))    $query->where('category', $request->category);
         if ($request->filled('month')) {
+            $request->validate(['month' => 'date_format:Y-m']);
             [$year, $month] = explode('-', $request->month);
             $query->whereYear('expense_date', $year)->whereMonth('expense_date', $month);
         }
 
-        $expenses = $query->orderByDesc('expense_date')->paginate($request->get('per_page', 20));
+        if ($request->filled('start_date')) {
+            $query->whereDate('expense_date', '>=', $request->start_date);
+        }
+
+        if ($request->filled('end_date')) {
+            $query->whereDate('expense_date', '<=', $request->end_date);
+        }
+
+        $expenses = $query->orderByDesc('expense_date')->paginate(min(100, $request->get('per_page', 20)));
 
         // Calcul du total pour la période affichée
         $totalQuery = Expense::where('tenant_id', $tenantId);
         if ($request->filled('month')) {
             [$year, $month] = explode('-', $request->month);
             $totalQuery->whereYear('expense_date', $year)->whereMonth('expense_date', $month);
+        }
+        if ($request->filled('start_date')) {
+            $totalQuery->whereDate('expense_date', '>=', $request->start_date);
+        }
+        if ($request->filled('end_date')) {
+            $totalQuery->whereDate('expense_date', '<=', $request->end_date);
         }
         $periodTotal = $totalQuery->sum('amount');
 
@@ -56,6 +71,7 @@ class ExpenseController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        abort_unless($request->user()->canDo('expenses', 'create'), 403, 'Permission refusée.');
         $data = $request->validate([
             'category'       => ['required', Rule::in(array_keys(Expense::categories()))],
             'description'    => 'required|string|max:255',
@@ -87,6 +103,7 @@ class ExpenseController extends Controller
     public function update(Request $request, Expense $expense): JsonResponse
     {
         $this->authorizeTenant($request, $expense);
+        abort_unless($request->user()->canDo('expenses', 'edit'), 403, 'Permission refusée.');
 
         $data = $request->validate([
             'category'       => ['sometimes', Rule::in(array_keys(Expense::categories()))],
@@ -109,6 +126,7 @@ class ExpenseController extends Controller
     public function destroy(Request $request, Expense $expense): JsonResponse
     {
         $this->authorizeTenant($request, $expense);
+        abort_unless($request->user()->canDo('expenses', 'delete'), 403, 'Permission refusée.');
         $expense->delete();
         return response()->json(['success' => true, 'message' => 'Dépense supprimée.']);
     }

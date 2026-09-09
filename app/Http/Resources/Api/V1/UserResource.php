@@ -14,16 +14,23 @@ class UserResource extends JsonResource
             'name'              => $this->name,
             'email'             => $this->email,
             'email_verified_at' => $this->email_verified_at?->toIso8601String(),
-            'avatar'            => $this->avatar,
+            'avatar'            => $this->avatar
+                                        ? \App\Http\Resources\Api\V1\ProductResource::resolveStorageUrl($this->avatar)
+                                        : null,
             'phone'             => $this->phone,
             'locale'            => $this->locale ?? 'fr',
             'is_active'         => (bool) $this->is_active,
             'block_reason'      => $this->block_reason,
             'last_login_at'     => $this->last_login_at?->toIso8601String(),
             'tenant_id'         => $this->tenant_id,
+            'country_code'      => $this->country_code,
+            'report_frequency'  => $this->report_frequency,
             'tenant'            => $this->whenLoaded('tenant', fn () => new TenantResource($this->tenant)),
-            'roles'             => $this->whenLoaded('roles', fn () => $this->getRoleNames()),
-            'created_at'        => $this->created_at->toIso8601String(),
+            'roles'              => $this->whenLoaded('roles', fn () => $this->getRoleNames()),
+            'module_permissions' => $this->isTenantAdmin()
+                ? \App\Models\User::fullPermissions()
+                : ($this->module_permissions ?? \App\Models\User::defaultEmployeePermissions()),
+            'created_at'         => $this->created_at->toIso8601String(),
         ];
     }
 }

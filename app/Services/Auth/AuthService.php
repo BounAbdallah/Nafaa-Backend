@@ -5,7 +5,7 @@ namespace App\Services\Auth;
 use App\Models\User;
 use App\Repositories\Contracts\UserRepositoryInterface;
 use Illuminate\Auth\Events\PasswordReset;
-use Illuminate\Auth\Events\Registered;
+// event(new Registered()) suppressed — emails triggered after onboarding
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -26,7 +26,9 @@ class AuthService
             'locale'   => $data['locale'] ?? 'fr',
         ]);
 
-        event(new Registered($user));
+        // ⚠️  Ne pas envoyer l'e-mail de vérification ici.
+        // Il sera déclenché une fois que l'utilisateur aura renseigné
+        // les informations de son entreprise (TenantService::createTenant).
 
         $token = $user->createToken('nafaa-auth-token')->plainTextToken;
 
@@ -52,10 +54,25 @@ class AuthService
             ]);
         }
 
+        if ($user->tenant && ! $user->tenant->is_active) {
+            throw ValidationException::withMessages([
+                'email' => ["Votre espace de travail est en attente d'approbation ou a été désactivé. Veuillez patienter ou contacter le support."],
+            ]);
+        }
+
         $user->tokens()->delete();
         $token = $user->createToken('nafaa-auth-token')->plainTextToken;
 
         $this->userRepository->updateLastLogin($user);
+
+        \App\Models\ActivityLog::record(
+            $user->tenant_id ?? null,
+            'login',
+            $user->id,
+            null,
+            ['user_agent' => substr((string) request()->userAgent(), 0, 500)],
+            request()->ip()
+        );
 
         return [
             'user'  => $user->fresh(['tenant', 'roles']),
@@ -87,7 +104,7 @@ class AuthService
             [
                 'email'                 => $data['email'],
                 'password'              => $data['password'],
-                'password_confirmation' => $data['password_confirmation'],
+                'password_confirmation' => $data['password_confirmation'] ?? $data['password'],
                 'token'                 => $data['token'],
             ],
             function (User $user, string $password) {

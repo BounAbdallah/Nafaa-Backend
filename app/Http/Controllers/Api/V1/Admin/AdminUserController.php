@@ -2,19 +2,29 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Http\Controllers\Concerns\ScopesByCountry;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\UserResource;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
+use App\Models\Tenant;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+
 class AdminUserController extends Controller
 {
+    use ScopesByCountry;
+
     public function index(Request $request): JsonResponse
     {
         $query = User::with(['tenant', 'roles'])
             ->withoutGlobalScopes()
+            ->role('admin') // Only show shop administrators
             ->latest();
+
+        $this->scopeUsersByCountry($query, $request->user());
 
         if ($request->has('search')) {
             $search = $request->search;
@@ -30,6 +40,13 @@ class AdminUserController extends Controller
 
         if ($request->has('tenant_id')) {
             $query->where('tenant_id', $request->tenant_id);
+        }
+
+        if ($request->has('tenant_status')) {
+            $status = $request->tenant_status === 'active';
+            $query->whereHas('tenant', function($q) use ($status) {
+                $q->withoutGlobalScopes()->where('is_active', $status);
+            });
         }
 
         $users = $query->paginate($request->get('per_page', 20));
@@ -48,13 +65,23 @@ class AdminUserController extends Controller
         ]);
     }
 
-    public function show(User $user): JsonResponse
+    public function show(Request $request, User $user): JsonResponse
     {
         $user->loadMissing(['tenant', 'roles']);
+        $this->assertCanManageUser($request->user(), $user);
+
+        $logs = \App\Models\ActivityLog::where('user_id', $user->id)
+            ->where('action', 'login')
+            ->latest()
+            ->limit(10)
+            ->get();
 
         return response()->json([
             'success' => true,
-            'data'    => ['user' => new UserResource($user)],
+            'data'    => [
+                'user' => new UserResource($user),
+                'logs' => $logs,
+            ],
         ]);
     }
 
@@ -63,6 +90,8 @@ class AdminUserController extends Controller
         $request->validate([
             'reason' => 'nullable|string|max:500',
         ]);
+
+        $this->assertCanManageUser($request->user(), $user);
 
         if ($user->hasRole('super_admin')) {
             return response()->json([
@@ -76,6 +105,11 @@ class AdminUserController extends Controller
             'block_reason' => $request->reason,
         ]);
 
+        // If the user is the owner of their tenant, block the tenant too
+        if ($user->tenant && $user->tenant->owner_id === $user->id) {
+            $user->tenant->update(['is_active' => false]);
+        }
+
         $user->tokens()->delete();
 
         return response()->json([
@@ -85,12 +119,19 @@ class AdminUserController extends Controller
         ]);
     }
 
-    public function unblock(User $user): JsonResponse
+    public function unblock(Request $request, User $user): JsonResponse
     {
+        $this->assertCanManageUser($request->user(), $user);
+
         $user->update([
             'is_active'    => true,
             'block_reason' => null,
         ]);
+
+        // If the user is the owner of their tenant, unblock the tenant too
+        if ($user->tenant && $user->tenant->owner_id === $user->id) {
+            $user->tenant->update(['is_active' => true]);
+        }
 
         return response()->json([
             'success' => true,
@@ -99,14 +140,121 @@ class AdminUserController extends Controller
         ]);
     }
 
-    public function stats(): JsonResponse
+    /**
+     * Supprime un utilisateur (corbeille / soft delete) — super admin uniquement.
+     */
+    public function destroy(Request $request, User $user): JsonResponse
     {
+        if ($user->id === $request->user()->id) {
+            return response()->json(['success' => false, 'message' => 'Vous ne pouvez pas supprimer votre propre compte.'], 422);
+        }
+        if ($user->hasRole('super_admin')) {
+            return response()->json(['success' => false, 'message' => 'Impossible de supprimer un super administrateur.'], 403);
+        }
+
+        $user->tokens()->delete(); // révoque ses sessions
+        $user->delete();
+
+        return response()->json(['success' => true, 'message' => "L'utilisateur {$user->name} a été déplacé dans la corbeille."]);
+    }
+
+    /**
+     * Liste les utilisateurs supprimés (corbeille).
+     */
+    public function trashed(Request $request): JsonResponse
+    {
+        $query = User::onlyTrashed()->with(['tenant', 'roles'])->latest('deleted_at');
+
+        if ($search = $request->get('search')) {
+            $query->where(fn ($q) => $q->where('name', 'like', "%$search%")->orWhere('email', 'like', "%$search%"));
+        }
+
+        $users = $query->paginate($request->get('per_page', 20));
+
+        return response()->json([
+            'success' => true,
+            'data'    => [
+                'users' => collect($users->items())->map(fn ($u) => [
+                    'id'         => $u->id,
+                    'name'       => $u->name,
+                    'email'      => $u->email,
+                    'roles'      => $u->getRoleNames(),
+                    'tenant'     => $u->tenant?->name,
+                    'deleted_at' => $u->deleted_at?->toIso8601String(),
+                ]),
+                'meta'  => [
+                    'total'        => $users->total(),
+                    'per_page'     => $users->perPage(),
+                    'current_page' => $users->currentPage(),
+                    'last_page'    => $users->lastPage(),
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Restaure un utilisateur depuis la corbeille.
+     */
+    public function restore(int $id): JsonResponse
+    {
+        $user = User::onlyTrashed()->findOrFail($id);
+        $user->restore();
+
+        return response()->json(['success' => true, 'message' => "L'utilisateur {$user->name} a été restauré."]);
+    }
+
+    /**
+     * Supprime définitivement un utilisateur.
+     */
+    public function forceDelete(int $id): JsonResponse
+    {
+        $user = User::onlyTrashed()->findOrFail($id);
+        $name = $user->name;
+        $user->tokens()->delete();
+        $user->forceDelete();
+
+        return response()->json(['success' => true, 'message' => "Le compte {$name} a été supprimé définitivement."]);
+    }
+
+    public function stats(Request $request): JsonResponse
+    {
+        $admin = $request->user();
+        $tenantQ = fn () => $this->scopeTenantsByCountry(Tenant::withoutGlobalScopes(), $admin);
+        $userQ   = fn () => $this->scopeUsersByCountry(User::withoutGlobalScopes(), $admin);
+
+        // 1. Basic Stats
+        $totalTenants = $tenantQ()->count();
+        $totalUsers   = $userQ()->count();
+        
+        // 2. DB Size Mock (based on records)
+        // In a real app, you might query INFORMATION_SCHEMA or use a library
+        $mockDbSize = ($totalTenants * 1.2) + ($totalUsers * 0.05) + 15.4; // MB
+        
+        // 3. Tenants by Industry
+        $tenantsByType = $tenantQ()
+            ->select('industry', DB::raw('count(*) as count'))
+            ->groupBy('industry')
+            ->get()
+            ->mapWithKeys(fn ($item) => [$item->industry => $item->count]);
+
+        // 4. Registration Graph Data (Last 30 days)
+        $registrations = $tenantQ()
+            ->where('created_at', '>=', now()->subDays(30))
+            ->select(DB::raw('DATE(created_at) as date'), DB::raw('count(*) as count'))
+            ->groupBy('date')
+            ->orderBy('date')
+            ->get();
+
         $stats = [
-            'total_users'   => User::withoutGlobalScopes()->count(),
-            'active_users'  => User::withoutGlobalScopes()->where('is_active', true)->count(),
-            'blocked_users' => User::withoutGlobalScopes()->where('is_active', false)->count(),
-            'unverified'    => User::withoutGlobalScopes()->whereNull('email_verified_at')->count(),
-            'super_admins'  => User::withoutGlobalScopes()->role('super_admin')->count(),
+            'total_users'    => $totalUsers,
+            'active_users'   => $userQ()->where('is_active', true)->count(),
+            'blocked_users'  => $userQ()->where('is_active', false)->count(),
+            'total_tenants'     => $totalTenants,
+            'pending_approvals' => $tenantQ()->where('is_active', false)->count(),
+            'db_size_mb'        => round($mockDbSize, 2),
+            'tenants_by_type'   => $tenantsByType,
+            'graph_data'        => $registrations,
+            'super_admins'      => User::withoutGlobalScopes()->role('super_admin')->count(),
         ];
 
         return response()->json([

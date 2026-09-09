@@ -11,13 +11,15 @@ class Product extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'tenant_id', 'name', 'sku', 'description', 'type',
-        'category', 'unit', 'selling_price', 'cost_price',
+        'tenant_id', 'category_id', 'name', 'sku', 'description', 'type',
+        'category', 'unit', 'selling_price', 'min_price', 'cost_price',
         'stock_quantity', 'stock_alert', 'image', 'is_active',
     ];
 
     protected $casts = [
+        'category_id'    => 'integer',
         'selling_price'  => 'float',
+        'min_price'      => 'float',
         'cost_price'     => 'float',
         'stock_quantity' => 'integer',
         'stock_alert'    => 'integer',
@@ -29,9 +31,24 @@ class Product extends Model
         return $this->belongsTo(Tenant::class);
     }
 
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(Category::class);
+    }
+
+    public function boms(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Bom::class);
+    }
+
     public function isLowStock(): bool
     {
-        return $this->type === 'product' && $this->stock_quantity <= $this->stock_alert;
+        return in_array($this->type, ['product', 'material']) && $this->stock_quantity <= $this->stock_alert;
+    }
+
+    public function isMaterial(): bool
+    {
+        return $this->type === 'material';
     }
 
     public function getMarginAttribute(): float

@@ -13,11 +13,12 @@ class Customer extends Model
     protected $fillable = [
         'tenant_id', 'name', 'email', 'phone', 'company',
         'type', 'address', 'city', 'country', 'notes',
-        'total_spent', 'orders_count', 'is_active',
+        'total_spent', 'orders_count', 'is_active', 'account_balance',
     ];
 
     protected $casts = [
-        'total_spent'  => 'float',
+        'total_spent'     => 'float',
+        'account_balance' => 'float',
         'orders_count' => 'integer',
         'is_active'    => 'boolean',
     ];
@@ -30,6 +31,23 @@ class Customer extends Model
     public function orders(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(Order::class);
+    }
+
+    public function accountEntries(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(CustomerAccountEntry::class)->latest();
+    }
+
+    /** Montant que le client DOIT à la boutique (ardoise). 0 s'il n'a pas de dette. */
+    public function getDebtAttribute(): float
+    {
+        return $this->account_balance < 0 ? abs($this->account_balance) : 0.0;
+    }
+
+    /** Avance disponible du client (dépôt restant). 0 s'il n'a pas d'avance. */
+    public function getDepositAttribute(): float
+    {
+        return $this->account_balance > 0 ? (float) $this->account_balance : 0.0;
     }
 
     public function getDisplayNameAttribute(): string

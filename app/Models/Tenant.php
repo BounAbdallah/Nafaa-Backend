@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Tenant extends Model
@@ -26,6 +27,10 @@ class Tenant extends Model
         'pm_last_four',
         'trial_ends_at',
         'owner_id',
+        'pack_id',
+        'custom_price',
+        'ambassador_id',
+        'referral_code_used',
     ];
 
     protected $casts = [
@@ -33,6 +38,7 @@ class Tenant extends Model
         'is_active'       => 'boolean',
         'plan_expires_at' => 'datetime',
         'trial_ends_at'   => 'datetime',
+        'custom_price'    => 'decimal:2',
     ];
 
     protected $hidden = [
@@ -71,12 +77,22 @@ class Tenant extends Model
         'other'         => 'Autre',
     ];
 
+    public function pack(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Pack::class);
+    }
+
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
     }
 
-    public function owner(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function payments(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(SubscriptionPayment::class);
+    }
+
+    public function owner(): BelongsTo
     {
         return $this->belongsTo(User::class, 'owner_id');
     }
@@ -84,6 +100,35 @@ class Tenant extends Model
     public function isOnTrial(): bool
     {
         return $this->trial_ends_at && $this->trial_ends_at->isFuture();
+    }
+
+    /**
+     * L'espace dispose-t-il d'une fonctionnalité optionnelle (ex: 'credit') ?
+     * Source : settings->features (alimenté par le pack et/ou un override admin).
+     */
+    public function hasFeature(string $key): bool
+    {
+        return in_array($key, $this->settings['features'] ?? [], true);
+    }
+
+    /**
+     * Prix mensuel effectif de l'abonnement :
+     * prix personnalisé (remise manuelle) s'il est défini, sinon prix du pack.
+     */
+    public function getEffectivePrice(): float
+    {
+        if ($this->custom_price !== null) {
+            return (float) $this->custom_price;
+        }
+
+        if (!$this->pack) {
+            return 0.0;
+        }
+
+        // Prix localisé selon le pays de l'espace (settings->country)
+        $this->pack->loadMissing('countryPrices');
+
+        return $this->pack->priceFor($this->settings['country'] ?? null)['price'];
     }
 
     public function hasActivePlan(): bool
@@ -97,6 +142,10 @@ class Tenant extends Model
 
     public function getPlanLimits(): array
     {
+        if ($this->pack) {
+            return $this->pack->limits;
+        }
+
         return match ($this->plan) {
             self::PLAN_DEMARRAGE  => ['users' => 2,  'products' => 50,   'storage_gb' => 1],
             self::PLAN_PRO        => ['users' => 10, 'products' => 500,  'storage_gb' => 10],

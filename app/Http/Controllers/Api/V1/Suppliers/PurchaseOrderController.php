@@ -18,7 +18,7 @@ class PurchaseOrderController extends Controller
     {
         $tenantId = $request->user()->tenant_id;
         $query    = PurchaseOrder::where('tenant_id', $tenantId)
-                        ->with(['supplier', 'items']);
+                        ->with(['supplier', 'items', 'user']);
 
         if ($request->filled('search')) {
             $s = $request->search;
@@ -29,6 +29,14 @@ class PurchaseOrderController extends Controller
         }
         if ($request->filled('status'))      $query->where('status', $request->status);
         if ($request->filled('supplier_id')) $query->where('supplier_id', $request->supplier_id);
+
+        if ($request->filled('start_date')) {
+            $query->whereDate('order_date', '>=', $request->start_date);
+        }
+
+        if ($request->filled('end_date')) {
+            $query->whereDate('order_date', '<=', $request->end_date);
+        }
 
         $orders = $query->orderByDesc('order_date')->paginate($request->get('per_page', 20));
 
@@ -48,6 +56,7 @@ class PurchaseOrderController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        abort_unless($request->user()->canDo('purchase_orders', 'create'), 403, 'Permission refusée.');
         $data = $request->validate([
             'supplier_id'          => 'required|integer',
             'order_date'           => 'required|date',
@@ -83,7 +92,7 @@ class PurchaseOrderController extends Controller
 
             foreach ($data['items'] as $item) {
                 $order->items()->create([
-                    'product_id'  => $item['product_id'] ?? null,
+                    'product_id'  => !empty($item['product_id']) ? (int) $item['product_id'] : null,
                     'description' => $item['description'],
                     'unit'        => $item['unit'],
                     'quantity'    => $item['quantity'],
@@ -98,7 +107,7 @@ class PurchaseOrderController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Bon de commande créé.',
-            'data'    => ['order' => new PurchaseOrderResource($order->load(['supplier', 'items.product']))],
+            'data'    => ['order' => new PurchaseOrderResource($order->load(['supplier', 'items.product', 'user']))],
         ], 201);
     }
 
@@ -107,13 +116,14 @@ class PurchaseOrderController extends Controller
         $this->authorizeTenant($request, $purchaseOrder);
         return response()->json([
             'success' => true,
-            'data'    => ['order' => new PurchaseOrderResource($purchaseOrder->load(['supplier', 'items.product']))],
+            'data'    => ['order' => new PurchaseOrderResource($purchaseOrder->load(['supplier', 'items.product', 'user']))],
         ]);
     }
 
     public function updateStatus(Request $request, PurchaseOrder $purchaseOrder): JsonResponse
     {
         $this->authorizeTenant($request, $purchaseOrder);
+        abort_unless($request->user()->canDo('purchase_orders', 'edit'), 403, 'Permission refusée.');
 
         $data = $request->validate([
             'status'         => ['required', Rule::in(array_keys(PurchaseOrder::$statuses))],
@@ -186,6 +196,7 @@ class PurchaseOrderController extends Controller
     public function destroy(Request $request, PurchaseOrder $purchaseOrder): JsonResponse
     {
         $this->authorizeTenant($request, $purchaseOrder);
+        abort_unless($request->user()->canDo('purchase_orders', 'delete'), 403, 'Permission refusée.');
         abort_if($purchaseOrder->status === 'received', 422, 'Impossible de supprimer une commande reçue.');
         $purchaseOrder->delete();
         return response()->json(['success' => true, 'message' => 'Bon de commande supprimé.']);
