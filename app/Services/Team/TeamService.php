@@ -81,8 +81,11 @@ class TeamService
 
         try {
             $user->notify(new TeamInvitationNotification($tenant, $invitedBy->name, $tempPassword));
-        } catch (\Throwable) {
-            // Ne pas bloquer l'invitation si l'email échoue
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('TeamInvitation mail failed', [
+                'user_email' => $user->email,
+                'error'      => $e->getMessage(),
+            ]);
         }
 
         return ['user' => $user->fresh('roles'), 'temp_password' => $tempPassword];
