@@ -31,14 +31,17 @@ class Tenant extends Model
         'custom_price',
         'ambassador_id',
         'referral_code_used',
+        'default_vat_rate',
+        'vat_number',
     ];
 
     protected $casts = [
-        'settings'        => 'array',
-        'is_active'       => 'boolean',
-        'plan_expires_at' => 'datetime',
-        'trial_ends_at'   => 'datetime',
-        'custom_price'    => 'decimal:2',
+        'settings'         => 'array',
+        'is_active'        => 'boolean',
+        'plan_expires_at'  => 'datetime',
+        'trial_ends_at'    => 'datetime',
+        'custom_price'     => 'decimal:2',
+        'default_vat_rate' => 'float',
     ];
 
     protected $hidden = [

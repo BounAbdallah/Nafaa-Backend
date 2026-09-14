@@ -160,8 +160,11 @@
                     @if(!empty($order->tenant->settings['phone']))
                         Téléphone: {{ $order->tenant->settings['phone'] }}<br>
                     @endif
-                    @if(!empty($order->tenant->settings['ninea']))
+                    @if(($order->vat_rate ?? 0) > 0 && !empty($order->tenant->settings['ninea']))
                         NINEA: {{ $order->tenant->settings['ninea'] }}<br>
+                    @endif
+                    @if(($order->vat_rate ?? 0) > 0 && !empty($order->tenant->vat_number))
+                        N° TVA: {{ $order->tenant->vat_number }}<br>
                     @endif
                     @if(!empty($order->tenant->settings['rc']))
                         RC: {{ $order->tenant->settings['rc'] }}
@@ -239,7 +242,7 @@
 
         <div class="totals-section">
             <div class="total-row">
-                <span style="float: left; color: #7A90A4;">Sous-total</span>
+                <span style="float: left; color: #7A90A4;">Total HT</span>
                 <span style="float: right; font-weight: bold;">{{ number_format($order->subtotal, 0, ',', ' ') }} FCFA</span>
                 <div class="clear"></div>
             </div>
@@ -250,10 +253,17 @@
                 <div class="clear"></div>
             </div>
             @endif
+            @if(($order->vat_rate ?? 0) > 0)
+            <div class="total-row">
+                <span style="float: left; color: #7A90A4;">TVA ({{ $order->vat_rate }}%)</span>
+                <span style="float: right; font-weight: bold;">{{ number_format($order->vat_amount, 0, ',', ' ') }} FCFA</span>
+                <div class="clear"></div>
+            </div>
+            @endif
             <div class="total-row grand-total">
                 <table class="grand-total-table">
                     <tr>
-                        <td class="label">TOTAL À PAYER</td>
+                        <td class="label">TOTAL TTC</td>
                         <td style="text-align: right;">{{ number_format($order->total_amount, 0, ',', ' ') }} <span style="font-size: 12px; font-weight: normal;">FCFA</span></td>
                     </tr>
                 </table>
