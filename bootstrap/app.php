@@ -13,6 +13,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // L'API est 100 % stateless (Bearer tokens) — on exclut la session
+        // pour éviter l'erreur "Target class [session] does not exist"
+        // quand Sanctum détecte un domaine stateful.
+        $middleware->api(remove: [
+            \Illuminate\Session\Middleware\StartSession::class,
+        ]);
+
         $middleware->alias([
             'role'               => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission'         => \Spatie\Permission\Middleware\PermissionMiddleware::class,

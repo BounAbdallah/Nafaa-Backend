@@ -71,6 +71,7 @@ class ExpenseController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        abort_unless($request->user()->canDo('expenses', 'create'), 403, 'Permission refusée.');
         $data = $request->validate([
             'category'       => ['required', Rule::in(array_keys(Expense::categories()))],
             'description'    => 'required|string|max:255',
@@ -102,6 +103,7 @@ class ExpenseController extends Controller
     public function update(Request $request, Expense $expense): JsonResponse
     {
         $this->authorizeTenant($request, $expense);
+        abort_unless($request->user()->canDo('expenses', 'edit'), 403, 'Permission refusée.');
 
         $data = $request->validate([
             'category'       => ['sometimes', Rule::in(array_keys(Expense::categories()))],
@@ -124,6 +126,7 @@ class ExpenseController extends Controller
     public function destroy(Request $request, Expense $expense): JsonResponse
     {
         $this->authorizeTenant($request, $expense);
+        abort_unless($request->user()->canDo('expenses', 'delete'), 403, 'Permission refusée.');
         $expense->delete();
         return response()->json(['success' => true, 'message' => 'Dépense supprimée.']);
     }

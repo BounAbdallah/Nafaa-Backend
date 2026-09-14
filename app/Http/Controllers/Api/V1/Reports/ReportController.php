@@ -77,17 +77,24 @@ class ReportController extends Controller
      */
     public function dailySummary(Request $request): JsonResponse
     {
-        $tenantId = $request->user()->tenant_id;
+        $user     = $request->user();
+        $tenantId = $user->tenant_id;
         $startDate = $request->query('start_date', Carbon::today()->toDateString());
         $endDate = $request->query('end_date', Carbon::today()->toDateString());
-        
+
         $start = Carbon::parse($startDate)->startOfDay();
         $end = Carbon::parse($endDate)->endOfDay();
 
-        $orders = Order::where('tenant_id', $tenantId)
+        $query = Order::where('tenant_id', $tenantId)
             ->where('status', '!=', 'cancelled')
-            ->whereBetween('created_at', [$start, $end])
-            ->get();
+            ->whereBetween('created_at', [$start, $end]);
+
+        // Employees see only their own orders
+        if (!$user->isTenantAdmin()) {
+            $query->where('user_id', $user->id);
+        }
+
+        $orders = $query->get();
 
         $totalSales = $orders->sum('total_amount');
         $totalDiscount = $orders->sum('discount_amount');
@@ -106,6 +113,7 @@ class ReportController extends Controller
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->where('orders.tenant_id', $tenantId)
             ->where('orders.status', '!=', 'cancelled')
+            ->whereNull('orders.deleted_at')
             ->whereBetween('orders.created_at', [$start, $end])
             ->select('products.name', DB::raw('SUM(order_items.quantity) as total_qty'), DB::raw('SUM(order_items.subtotal) as total_revenue'))
             ->groupBy('products.id', 'products.name')
@@ -132,6 +140,7 @@ class ReportController extends Controller
      */
     public function financialSummary(Request $request): JsonResponse
     {
+        abort_unless($request->user()->isTenantAdmin(), 403, 'Accès réservé aux administrateurs.');
         $tenantId = $request->user()->tenant_id;
         $period = $request->query('period', 'month'); // custom, week, month, year
         
@@ -150,24 +159,40 @@ class ReportController extends Controller
             $endDate = $now->endOfMonth()->toDateString();
         }
 
-        // Revenues
+        // Revenues (chiffre d'affaires total)
         $revenues = Order::where('tenant_id', $tenantId)
             ->where('status', '!=', 'cancelled')
             ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
             ->sum('total_amount');
 
-        // Expenses
+        // Expenses (charges)
         $expenses = Expense::where('tenant_id', $tenantId)
             ->whereBetween('expense_date', [$startDate, $endDate])
             ->sum('amount');
 
-        // Net Profit
-        $netProfit = $revenues - $expenses;
+        // Bénéfice brut = Σ (prix de vente - prix d'achat) × quantité
+        // = SUM(subtotal) - SUM(cost_price * quantity)
+        $grossProfit = (float) DB::table('order_items')
+            ->join('orders',   'order_items.order_id',   '=', 'orders.id')
+            ->join('products', 'order_items.product_id', '=', 'products.id')
+            ->where('orders.tenant_id', $tenantId)
+            ->where('orders.status', '!=', 'cancelled')
+            ->whereNull('orders.deleted_at')
+            ->whereBetween('orders.created_at', [
+                Carbon::parse($startDate)->startOfDay(),
+                Carbon::parse($endDate)->endOfDay(),
+            ])
+            ->selectRaw('SUM(order_items.subtotal - (products.cost_price * order_items.quantity)) as profit')
+            ->value('profit');
+
+        // Bénéfice Net = Marge brute sur ventes − Charges
+        $netProfit = $grossProfit - $expenses;
 
         // Daily breakdown for charts
         $dailyRevenues = DB::table('orders')
             ->where('tenant_id', $tenantId)
             ->where('status', '!=', 'cancelled')
+            ->whereNull('deleted_at')
             ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
             ->select(DB::raw('DATE(created_at) as date'), DB::raw('SUM(total_amount) as total'))
             ->groupBy('date')
@@ -200,11 +225,12 @@ class ReportController extends Controller
         return response()->json([
             'success' => true,
             'data' => [
-                'period' => $period,
-                'revenues' => $revenues,
-                'expenses' => $expenses,
-                'net_profit' => $netProfit,
-                'chart_data' => $chartData,
+                'period'       => $period,
+                'revenues'     => $revenues,
+                'expenses'     => $expenses,
+                'gross_profit' => $grossProfit,          // (prix vente − prix achat) sans charges
+                'net_profit'   => $netProfit,            // gross_profit − charges
+                'chart_data'   => $chartData,
             ]
         ]);
     }
@@ -214,40 +240,77 @@ class ReportController extends Controller
      */
     public function inventoryValuation(Request $request): JsonResponse
     {
+        abort_unless($request->user()->isTenantAdmin(), 403, 'Accès réservé aux administrateurs.');
         $tenantId = $request->user()->tenant_id;
+        $perPage    = $request->query('per_page', 15);
+        $typeFilter = $request->query('type'); // 'product' | 'material' | null (tous)
 
-        $products = Product::where('tenant_id', $tenantId)
-            ->where('type', 'product')
+        // Tous les produits en stock (pour les totaux filtrés)
+        $allProducts = Product::where('tenant_id', $tenantId)
             ->where('stock_quantity', '>', 0)
-            ->get();
+            ->get(['type', 'stock_quantity', 'selling_price', 'cost_price', 'id']);
 
-        $totalValuation = 0;
-        $totalCost = 0;
-        
-        $inventoryDetails = $products->map(function ($product) use (&$totalValuation, &$totalCost) {
-            $valuation = $product->stock_quantity * $product->selling_price;
-            $cost = $product->stock_quantity * ($product->purchase_price ?? 0);
-            
-            $totalValuation += $valuation;
-            $totalCost += $cost;
+        // Sous-ensemble selon le filtre actif
+        $filtered = match($typeFilter) {
+            'material' => $allProducts->where('type', 'material'),
+            'product'  => $allProducts->where('type', '!=', 'material'),
+            default    => $allProducts,
+        };
 
+        // Totaux appliqués au filtre actif
+        $totalValuationSelling = $filtered->sum(fn($p) => $p->stock_quantity * $p->selling_price);
+        $totalValuationCost    = $filtered->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
+        $materialValuation     = $filtered->where('type', 'material')->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
+        $productValuation      = $filtered->where('type', '!=', 'material')->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
+
+        // BOM — uniquement pertinent sur "Tous" ou "Produits"
+        $bomProductIds     = \App\Models\Bom::where('tenant_id', $tenantId)->pluck('product_id')->toArray();
+        $bomStockValuation = $typeFilter === 'material'
+            ? 0
+            : $filtered->whereIn('id', $bomProductIds)->sum(fn($p) => $p->stock_quantity * ($p->cost_price ?? 0));
+
+        // Paginated Details — avec filtre type si demandé
+        $paginated = Product::where('tenant_id', $tenantId)
+            ->where('stock_quantity', '>', 0)
+            ->when($typeFilter === 'material', fn($q) => $q->where('type', 'material'))
+            ->when($typeFilter === 'product',  fn($q) => $q->where('type', '!=', 'material'))
+            ->orderByRaw('stock_quantity * cost_price DESC')
+            ->paginate($perPage);
+
+        $details = collect($paginated->items())->map(function ($item) {
             return [
-                'id' => $product->id,
-                'name' => $product->name,
-                'category' => $product->category,
-                'quantity' => $product->stock_quantity,
-                'unit_price' => $product->selling_price,
-                'valuation' => $valuation,
+                'id'                => $item->id,
+                'name'              => $item->name,
+                'type'              => $item->type,
+                'category'          => $item->category,
+                'quantity'          => $item->stock_quantity,
+                'unit'              => $item->unit,
+                'cost_price'        => $item->cost_price,
+                'selling_price'     => $item->selling_price,
+                'valuation_cost'    => $item->stock_quantity * ($item->cost_price ?? 0),
+                'valuation_selling' => $item->stock_quantity * $item->selling_price,
             ];
-        })->sortByDesc('valuation')->values();
+        });
 
         return response()->json([
             'success' => true,
             'data' => [
-                'total_valuation' => $totalValuation,
-                'total_cost' => $totalCost,
-                'potential_profit' => $totalValuation - $totalCost,
-                'details' => $inventoryDetails,
+                'summary' => [
+                    'total_valuation_selling' => $totalValuationSelling,
+                    'total_valuation_cost'    => $totalValuationCost,
+                    'potential_profit'        => $totalValuationSelling - $totalValuationCost,
+                    'materials_valuation'     => $materialValuation,
+                    'products_valuation'      => $productValuation,
+                    'bom_stock_valuation'     => $bomStockValuation,
+                    'active_filter'           => $typeFilter ?? 'all',
+                ],
+                'details' => $details,
+                'meta' => [
+                    'current_page' => $paginated->currentPage(),
+                    'last_page'    => $paginated->lastPage(),
+                    'total'        => $paginated->total(),
+                    'per_page'     => $paginated->perPage(),
+                ]
             ]
         ]);
     }
@@ -257,6 +320,7 @@ class ReportController extends Controller
      */
     public function teamPerformance(Request $request): JsonResponse
     {
+        abort_unless($request->user()->isTenantAdmin(), 403, 'Accès réservé aux administrateurs.');
         $tenantId = $request->user()->tenant_id;
         $startDate = $request->query('start_date', Carbon::now()->startOfMonth()->toDateString());
         $endDate = $request->query('end_date', Carbon::now()->endOfMonth()->toDateString());
@@ -268,6 +332,7 @@ class ReportController extends Controller
             ->join('users', 'orders.user_id', '=', 'users.id')
             ->where('orders.tenant_id', $tenantId)
             ->where('orders.status', '!=', 'cancelled')
+            ->whereNull('orders.deleted_at')
             ->whereBetween('orders.created_at', [$start, $end])
             ->select('users.id', 'users.name', DB::raw('SUM(orders.total_amount) as total_revenue'), DB::raw('COUNT(orders.id) as total_orders'))
             ->groupBy('users.id', 'users.name')
@@ -289,6 +354,7 @@ class ReportController extends Controller
      */
     public function customerAnalytics(Request $request): JsonResponse
     {
+        abort_unless($request->user()->isTenantAdmin(), 403, 'Accès réservé aux administrateurs.');
         $tenantId = $request->user()->tenant_id;
         $startDate = $request->query('start_date', Carbon::now()->startOfMonth()->toDateString());
         $endDate = $request->query('end_date', Carbon::now()->endOfMonth()->toDateString());
@@ -300,6 +366,7 @@ class ReportController extends Controller
             ->join('customers', 'orders.customer_id', '=', 'customers.id')
             ->where('orders.tenant_id', $tenantId)
             ->where('orders.status', '!=', 'cancelled')
+            ->whereNull('orders.deleted_at')
             ->whereBetween('orders.created_at', [$start, $end])
             ->select('customers.id', 'customers.name', 'customers.phone', DB::raw('SUM(orders.total_amount) as total_spent'), DB::raw('COUNT(orders.id) as total_orders'))
             ->groupBy('customers.id', 'customers.name', 'customers.phone')

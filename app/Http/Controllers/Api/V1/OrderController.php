@@ -6,6 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\Tenant;
+use App\Models\User;
+use App\Notifications\LowStockNotification;
+use App\Notifications\NewOrderNotification;
+use App\Services\PushNotificationService;
+use App\Services\VatService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -16,11 +22,17 @@ class OrderController extends Controller
 {
     public function index(Request $request)
     {
-        $tenantId = Auth::user()->tenant_id;
-        
+        $user     = Auth::user();
+        $tenantId = $user->tenant_id;
+
         $query = Order::where('tenant_id', $tenantId)
             ->with(['customer', 'user'])
             ->latest();
+
+        // Employees only see their own orders
+        if (!$user->isTenantAdmin()) {
+            $query->where('user_id', $user->id);
+        }
 
         if ($request->search) {
             $query->where('reference', 'like', "%{$request->search}%");
@@ -52,24 +64,50 @@ class OrderController extends Controller
 
     public function store(Request $request)
     {
+        abort_unless(Auth::user()->canDo('orders', 'create'), 403, 'Permission refusée : créer une commande.');
         $request->validate([
             'customer_id'    => 'nullable|exists:customers,id',
             'items'          => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.quantity'   => 'required|numeric|min:0.001',
-            'payments'       => 'required|array|min:1',
+            'items.*.unit_price' => 'nullable|numeric|min:0',
+            'payments'       => 'nullable|array',
             'payments.*.method'  => 'required|string',
             'payments.*.amount'  => 'required|numeric|min:0',
             'payments.*.reference' => 'nullable|string',
+            'payment_mode'   => 'nullable|in:cash,credit,deposit', // cash (défaut), crédit (ardoise), avance
+            'due_date'       => 'nullable|date',                   // échéance du crédit (null = indéfinie)
             'discount_amount'=> 'nullable|numeric|min:0',
             'tax_amount'     => 'nullable|numeric|min:0',
+            'vat_rate'       => 'nullable|numeric|min:0|max:100',
             'notes'          => 'nullable|string',
         ]);
+
+        $mode = $request->get('payment_mode', 'cash');
+
+        // Le crédit/avance est une fonctionnalité optionnelle de l'abonnement
+        if (in_array($mode, ['credit', 'deposit'], true) && ! Auth::user()->tenant?->hasFeature('credit')) {
+            return response()->json([
+                'message' => 'La vente à crédit n\'est pas activée sur votre abonnement.',
+                'code'    => 'FEATURE_DISABLED',
+            ], 403);
+        }
+
+        // Crédit et avance exigent un client identifié
+        if (in_array($mode, ['credit', 'deposit'], true) && ! $request->customer_id) {
+            return response()->json([
+                'message' => 'Un client doit être sélectionné pour une vente à crédit ou sur avance.',
+            ], 422);
+        }
+        // Le mode comptant exige au moins un paiement
+        if ($mode === 'cash' && empty($request->payments)) {
+            return response()->json(['message' => 'Aucun paiement fourni.'], 422);
+        }
 
         $tenantId = Auth::user()->tenant_id;
         $userId   = Auth::id();
 
-        return DB::transaction(function () use ($request, $tenantId, $userId) {
+        return DB::transaction(function () use ($request, $tenantId, $userId, $mode) {
             $subtotal = 0;
             $orderItemsData = [];
 
@@ -80,36 +118,92 @@ class OrderController extends Controller
                     throw new \Exception("Stock insuffisant pour le produit : {$product->name}");
                 }
 
-                $itemSubtotal = $item['quantity'] * $product->selling_price;
+                $unitPrice = isset($item['unit_price']) ? (float) $item['unit_price'] : $product->selling_price;
+
+                // Enforce minimum price floor
+                if ($product->min_price > 0 && $unitPrice < $product->min_price) {
+                    throw new \Exception(
+                        "Prix trop bas pour « {$product->name} ». Prix minimal : " . number_format($product->min_price, 0, ',', ' ') . ' FCFA.'
+                    );
+                }
+
+                $itemSubtotal = $item['quantity'] * $unitPrice;
                 $subtotal += $itemSubtotal;
 
                 $orderItemsData[] = [
                     'product_id'  => $product->id,
                     'description' => $product->name,
                     'quantity'    => $item['quantity'],
-                    'unit_price'  => $product->selling_price,
+                    'unit_price'  => $unitPrice,
                     'subtotal'    => $itemSubtotal,
                 ];
 
                 $product->decrement('stock_quantity', $item['quantity']);
+
+                // Notify owner if stock just crossed the alert threshold
+                $freshQty = $product->fresh()->stock_quantity;
+                if ($product->type !== 'service' && $freshQty <= $product->stock_alert && $freshQty >= 0) {
+                    $ownerId = Tenant::find($tenantId)?->owner_id;
+                    $owner = $ownerId ? User::find($ownerId) : null;
+                    if ($owner) {
+                        $owner->notify(new LowStockNotification($product->fresh()));
+                        try {
+                            app(PushNotificationService::class)->sendToUser(
+                                $owner,
+                                '⚠️ Stock faible',
+                                "« {$product->name} » — {$freshQty} restant(s).",
+                                ['url' => '/products/' . $product->id]
+                            );
+                        } catch (\Throwable) {}
+                    }
+                }
             }
 
-            $tax      = $request->tax_amount ?? 0;
             $discount = $request->discount_amount ?? 0;
-            $total    = $subtotal + $tax - $discount;
-            
-            $paidAmount = collect($request->payments)->sum('amount');
-            $change     = max(0, $paidAmount - $total);
+            $tax      = $request->tax_amount ?? 0; // montant taxe libre (hors TVA structurée)
 
-            // Déterminer le statut de paiement
-            $paymentStatus = 'paid';
-            if ($paidAmount < $total) {
-                $paymentStatus = $paidAmount > 0 ? 'partial' : 'unpaid';
+            $payments  = $request->payments ?? [];
+            $cashPaid  = collect($payments)->sum('amount'); // argent réel reçu maintenant
+
+            $customer = $request->customer_id
+                ? \App\Models\Customer::where('tenant_id', $tenantId)->lockForUpdate()->find($request->customer_id)
+                : null;
+
+            // TVA structurée (cascade : override > client > tenant)
+            $tenant     = \App\Models\Tenant::find($tenantId);
+            $vatSvc     = app(VatService::class);
+            $vatRate    = $vatSvc->resolveRate(
+                $request->has('vat_rate') ? (float) $request->vat_rate : null,
+                $customer,
+                $tenant
+            );
+            $subtotalHt = round($subtotal - $discount, 2);
+            $vatAmount  = $vatSvc->computeAmount($subtotalHt, $vatRate);
+            $total      = $subtotalHt + $vatAmount + $tax;
+
+            // ── Vente sur AVANCE : on pioche dans le dépôt du client ──
+            if ($mode === 'deposit') {
+                if (! $customer || $customer->deposit < $total) {
+                    throw new \Exception("Avance insuffisante. Disponible : " . number_format($customer?->deposit ?? 0, 0, ',', ' ') . " FCFA.");
+                }
+                $paidAmount    = $total; // payé via l'avance
+                $change        = 0;
+                $paymentStatus = 'paid';
+                $primaryMethod = 'avance';
             }
-
-            $primaryMethod = $request->payments[0]['method'];
-            if (count($request->payments) > 1) {
-                $primaryMethod = 'multiple';
+            // ── Vente à CRÉDIT : le reste devient une dette ──
+            elseif ($mode === 'credit') {
+                $paidAmount    = min($cashPaid, $total);
+                $change        = 0;
+                $paymentStatus = $paidAmount > 0 ? 'partial' : 'unpaid';
+                $primaryMethod = $paidAmount > 0 ? 'credit_partial' : 'credit';
+            }
+            // ── Vente au COMPTANT (comportement habituel) ──
+            else {
+                $paidAmount    = $cashPaid;
+                $change        = max(0, $paidAmount - $total);
+                $paymentStatus = $paidAmount < $total ? ($paidAmount > 0 ? 'partial' : 'unpaid') : 'paid';
+                $primaryMethod = count($payments) > 1 ? 'multiple' : ($payments[0]['method'] ?? 'cash');
             }
 
             $order = Order::create([
@@ -121,7 +215,10 @@ class OrderController extends Controller
                 'payment_status'  => $paymentStatus,
                 'payment_method'  => $primaryMethod,
                 'subtotal'        => $subtotal,
+                'subtotal_ht'     => $subtotalHt,
                 'tax_amount'      => $tax,
+                'vat_rate'        => $vatRate,
+                'vat_amount'      => $vatAmount,
                 'discount_amount' => $discount,
                 'total_amount'    => $total,
                 'paid_amount'     => $paidAmount,
@@ -130,14 +227,42 @@ class OrderController extends Controller
             ]);
 
             $order->items()->createMany($orderItemsData);
-            
-            // Enregistrer les paiements détaillés
-            foreach ($request->payments as $p) {
+
+            // Paiements réels détaillés
+            foreach ($payments as $p) {
                 $order->payments()->create([
                     'payment_method' => $p['method'],
                     'amount'         => $p['amount'],
                     'reference'      => $p['reference'] ?? null,
                 ]);
+            }
+
+            // ── Mouvements de compte client ──
+            $accountService = app(\App\Services\CustomerAccountService::class);
+            if ($mode === 'deposit') {
+                $accountService->record($customer, 'withdrawal', $total, $userId, $order, null, 'avance',
+                    "Achat payé sur avance — commande {$order->reference}");
+            } elseif ($mode === 'credit') {
+                $creditAmount = round($total - $paidAmount, 2);
+                if ($creditAmount > 0) {
+                    $accountService->record($customer, 'credit', $creditAmount, $userId, $order,
+                        $request->due_date, null, "Vente à crédit — commande {$order->reference}");
+                }
+            }
+
+            // Notify owner of new sale
+            $ownerId = Tenant::find($tenantId)?->owner_id;
+            $owner   = $ownerId ? User::find($ownerId) : null;
+            if ($owner && $owner->id !== $userId) {
+                $owner->notify(new NewOrderNotification($order->reference, $total));
+                try {
+                    app(PushNotificationService::class)->sendToUser(
+                        $owner,
+                        '🛒 Nouvelle vente',
+                        "Commande {$order->reference} — " . number_format($total, 0, ',', ' ') . ' FCFA.',
+                        ['url' => '/orders']
+                    );
+                } catch (\Throwable) {}
             }
 
             return response()->json([
@@ -159,6 +284,7 @@ class OrderController extends Controller
 
     public function destroy($id)
     {
+        abort_unless(Auth::user()->canDo('orders', 'delete'), 403, 'Permission refusée : supprimer une commande.');
         $tenantId = Auth::user()->tenant_id;
         $order = Order::where('tenant_id', $tenantId)->findOrFail($id);
 

@@ -56,6 +56,7 @@ class PurchaseOrderController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        abort_unless($request->user()->canDo('purchase_orders', 'create'), 403, 'Permission refusée.');
         $data = $request->validate([
             'supplier_id'          => 'required|integer',
             'order_date'           => 'required|date',
@@ -91,7 +92,7 @@ class PurchaseOrderController extends Controller
 
             foreach ($data['items'] as $item) {
                 $order->items()->create([
-                    'product_id'  => $item['product_id'] ?? null,
+                    'product_id'  => !empty($item['product_id']) ? (int) $item['product_id'] : null,
                     'description' => $item['description'],
                     'unit'        => $item['unit'],
                     'quantity'    => $item['quantity'],
@@ -122,6 +123,7 @@ class PurchaseOrderController extends Controller
     public function updateStatus(Request $request, PurchaseOrder $purchaseOrder): JsonResponse
     {
         $this->authorizeTenant($request, $purchaseOrder);
+        abort_unless($request->user()->canDo('purchase_orders', 'edit'), 403, 'Permission refusée.');
 
         $data = $request->validate([
             'status'         => ['required', Rule::in(array_keys(PurchaseOrder::$statuses))],
@@ -194,6 +196,7 @@ class PurchaseOrderController extends Controller
     public function destroy(Request $request, PurchaseOrder $purchaseOrder): JsonResponse
     {
         $this->authorizeTenant($request, $purchaseOrder);
+        abort_unless($request->user()->canDo('purchase_orders', 'delete'), 403, 'Permission refusée.');
         abort_if($purchaseOrder->status === 'received', 422, 'Impossible de supprimer une commande reçue.');
         $purchaseOrder->delete();
         return response()->json(['success' => true, 'message' => 'Bon de commande supprimé.']);

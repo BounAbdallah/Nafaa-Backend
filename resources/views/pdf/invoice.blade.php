@@ -88,17 +88,23 @@
         .totals-section { float: right; width: 40%; }
         
         .total-row { padding: 8px 0; border-bottom: 1px solid #EEF7FC; }
-        .total-row.grand-total { 
-            border-bottom: none; 
-            font-size: 18px; 
-            font-weight: 900; 
-            color: #0F1E30; 
+        .total-row.grand-total {
+            border-bottom: none;
             margin-top: 10px;
-            background: #EEF7FC;
-            padding: 15px 10px;
-            border-radius: 6px;
         }
-        .total-row.grand-total .label { color: #3AA0D8; }
+        .grand-total-table {
+            width: 100%;
+            background: #EEF7FC;
+            border-radius: 6px;
+            border-collapse: collapse;
+        }
+        .grand-total-table td {
+            padding: 15px 10px;
+            font-size: 18px;
+            font-weight: 900;
+            color: #0F1E30;
+        }
+        .grand-total-table .label { color: #3AA0D8; }
         
         .badge { 
             display: inline-block; 
@@ -132,7 +138,9 @@
                 @php
                     $logoPath = \Illuminate\Support\Facades\Storage::disk('public')->path($order->tenant->logo);
                     $logoData = base64_encode(file_get_contents($logoPath));
-                    $logoSrc = 'data:image/' . pathinfo($logoPath, PATHINFO_EXTENSION) . ';base64,' . $logoData;
+                    $ext = strtolower(pathinfo($logoPath, PATHINFO_EXTENSION));
+                    $mime = $ext === 'jpg' ? 'jpeg' : $ext;
+                    $logoSrc = 'data:image/' . $mime . ';base64,' . $logoData;
                 @endphp
                 <img src="{{ $logoSrc }}" alt="Logo" style="max-height: 60px; max-width: 200px; margin-bottom: 10px;">
             @else
@@ -152,8 +160,11 @@
                     @if(!empty($order->tenant->settings['phone']))
                         Téléphone: {{ $order->tenant->settings['phone'] }}<br>
                     @endif
-                    @if(!empty($order->tenant->settings['ninea']))
+                    @if(($order->vat_rate ?? 0) > 0 && !empty($order->tenant->settings['ninea']))
                         NINEA: {{ $order->tenant->settings['ninea'] }}<br>
+                    @endif
+                    @if(($order->vat_rate ?? 0) > 0 && !empty($order->tenant->vat_number))
+                        N° TVA: {{ $order->tenant->vat_number }}<br>
                     @endif
                     @if(!empty($order->tenant->settings['rc']))
                         RC: {{ $order->tenant->settings['rc'] }}
@@ -231,7 +242,7 @@
 
         <div class="totals-section">
             <div class="total-row">
-                <span style="float: left; color: #7A90A4;">Sous-total</span>
+                <span style="float: left; color: #7A90A4;">Total HT</span>
                 <span style="float: right; font-weight: bold;">{{ number_format($order->subtotal, 0, ',', ' ') }} FCFA</span>
                 <div class="clear"></div>
             </div>
@@ -242,10 +253,20 @@
                 <div class="clear"></div>
             </div>
             @endif
-            <div class="total-row grand-total">
-                <span class="label" style="float: left;">TOTAL À PAYER</span>
-                <span style="float: right;">{{ number_format($order->total_amount, 0, ',', ' ') }} <span style="font-size: 12px; font-weight: normal;">FCFA</span></span>
+            @if(($order->vat_rate ?? 0) > 0)
+            <div class="total-row">
+                <span style="float: left; color: #7A90A4;">TVA ({{ $order->vat_rate }}%)</span>
+                <span style="float: right; font-weight: bold;">{{ number_format($order->vat_amount, 0, ',', ' ') }} FCFA</span>
                 <div class="clear"></div>
+            </div>
+            @endif
+            <div class="total-row grand-total">
+                <table class="grand-total-table">
+                    <tr>
+                        <td class="label">TOTAL TTC</td>
+                        <td style="text-align: right;">{{ number_format($order->total_amount, 0, ',', ' ') }} <span style="font-size: 12px; font-weight: normal;">FCFA</span></td>
+                    </tr>
+                </table>
             </div>
         </div>
         <div class="clear"></div>

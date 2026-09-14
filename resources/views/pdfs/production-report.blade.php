@@ -133,7 +133,7 @@
                 <td class="label">Responsable</td>
                 <td class="value">{{ $production->user->name }}</td>
                 <td class="label">Date d'expiration</td>
-                <td class="value">{{ $production->expiry_date ? $production->expiry_date->format('d/m/Y') : 'N/A' }}</td>
+                <td class="value">{{ $production->expiry_date ? $production->expiry_date->format('d/m/Y') : '—' }}</td>
             </tr>
         </table>
 

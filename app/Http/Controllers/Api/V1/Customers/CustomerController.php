@@ -51,6 +51,7 @@ class CustomerController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        abort_unless($request->user()->canDo('customers', 'create'), 403, 'Permission refusée.');
         $data = $request->validate([
             'name'    => 'required|string|max:255',
             'email'   => 'nullable|email|max:255',
@@ -86,6 +87,7 @@ class CustomerController extends Controller
     public function update(Request $request, Customer $customer): JsonResponse
     {
         $this->authorizeTenant($request, $customer);
+        abort_unless($request->user()->canDo('customers', 'edit'), 403, 'Permission refusée.');
 
         $data = $request->validate([
             'name'    => 'sometimes|string|max:255',
@@ -112,6 +114,7 @@ class CustomerController extends Controller
     public function destroy(Request $request, Customer $customer): JsonResponse
     {
         $this->authorizeTenant($request, $customer);
+        abort_unless($request->user()->canDo('customers', 'delete'), 403, 'Permission refusée.');
         $customer->delete();
         return response()->json(['success' => true, 'message' => 'Client supprimé.']);
     }

@@ -5,6 +5,7 @@ namespace App\Services\Team;
 use App\Models\ActivityLog;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Notifications\TeamInvitationNotification;
 use App\Repositories\Contracts\UserRepositoryInterface;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -61,6 +62,13 @@ class TeamService
         }
 
         $role = $data['role'] ?? 'employee';
+
+        // S'assurer que le rôle comptable existe et appliquer ses permissions
+        if ($role === 'comptable') {
+            \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'comptable', 'guard_name' => 'sanctum']);
+            $user->update(['module_permissions' => User::comptablePermissions()]);
+        }
+
         $user->syncRoles([$role]);
 
         ActivityLog::record(
@@ -70,6 +78,12 @@ class TeamService
             subject:    $user,
             properties: ['role' => $role, 'is_new' => !$existing],
         );
+
+        try {
+            $user->notify(new TeamInvitationNotification($tenant, $invitedBy->name, $tempPassword));
+        } catch (\Throwable) {
+            // Ne pas bloquer l'invitation si l'email échoue
+        }
 
         return ['user' => $user->fresh('roles'), 'temp_password' => $tempPassword];
     }

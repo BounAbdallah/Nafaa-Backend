@@ -21,7 +21,10 @@ class Order extends Model
         'payment_status',
         'payment_method',
         'subtotal',
+        'subtotal_ht',
         'tax_amount',
+        'vat_rate',
+        'vat_amount',
         'discount_amount',
         'total_amount',
         'paid_amount',
@@ -31,7 +34,10 @@ class Order extends Model
 
     protected $casts = [
         'subtotal'        => 'float',
+        'subtotal_ht'     => 'float',
         'tax_amount'      => 'float',
+        'vat_rate'        => 'float',
+        'vat_amount'      => 'float',
         'discount_amount' => 'float',
         'total_amount'    => 'float',
         'paid_amount'     => 'float',

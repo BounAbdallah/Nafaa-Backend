@@ -28,6 +28,23 @@ class EnsureTenantMiddleware
             ], 403);
         }
 
+        // ── Blocage à l'expiration de l'abonnement ────────────────────────
+        // Bloqué uniquement si une date d'expiration EST définie et dépassée,
+        // et que l'espace n'est pas en période d'essai.
+        // Les routes d'abonnement restent accessibles pour consulter/renouveler.
+        $tenant  = $user->tenant;
+        $expired = ! $tenant->isOnTrial()
+            && $tenant->plan_expires_at
+            && $tenant->plan_expires_at->isPast();
+
+        if ($expired && ! $request->is('api/v1/subscription*')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Votre abonnement a expiré. Veuillez le renouveler pour continuer.',
+                'code'    => 'SUBSCRIPTION_EXPIRED',
+            ], 403);
+        }
+
         return $next($request);
     }
 }

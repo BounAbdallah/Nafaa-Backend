@@ -47,6 +47,7 @@ class SupplierController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        abort_unless($request->user()->canDo('suppliers', 'create'), 403, 'Permission refusée.');
         $data = $request->validate([
             'name'         => 'required|string|max:255',
             'phone'        => 'nullable|string|max:30',
@@ -80,6 +81,7 @@ class SupplierController extends Controller
     public function update(Request $request, Supplier $supplier): JsonResponse
     {
         $this->authorizeTenant($request, $supplier);
+        abort_unless($request->user()->canDo('suppliers', 'edit'), 403, 'Permission refusée.');
 
         $data = $request->validate([
             'name'         => 'sometimes|string|max:255',
@@ -105,6 +107,7 @@ class SupplierController extends Controller
     public function destroy(Request $request, Supplier $supplier): JsonResponse
     {
         $this->authorizeTenant($request, $supplier);
+        abort_unless($request->user()->canDo('suppliers', 'delete'), 403, 'Permission refusée.');
 
         // Bloquer la suppression si des BDC actifs existent
         $hasActiveOrders = $supplier->purchaseOrders()

@@ -38,7 +38,7 @@ class ActivityLog extends Model
     }
 
     public static function record(
-        int $tenantId,
+        ?int $tenantId,
         string $action,
         ?int $userId = null,
         ?Model $subject = null,
@@ -46,7 +46,7 @@ class ActivityLog extends Model
         ?string $ip = null
     ): static {
         return static::create([
-            'tenant_id'    => $tenantId,
+            'tenant_id'    => $tenantId ?: null,
             'user_id'      => $userId,
             'action'       => $action,
             'subject_type' => $subject ? get_class($subject) : null,

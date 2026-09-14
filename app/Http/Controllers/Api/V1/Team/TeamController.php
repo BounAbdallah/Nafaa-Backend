@@ -33,10 +33,29 @@ class TeamController extends Controller
         $request->validate([
             'name'  => 'required|string|max:255',
             'email' => 'required|email|max:255',
-            'role'  => ['required', Rule::in(['admin', 'employee', 'viewer'])],
+            'role'  => ['required', Rule::in(['admin', 'employee', 'viewer', 'comptable'])],
         ]);
 
         $tenant = $request->user()->tenant;
+
+        // ── Le rôle comptable exige la fonctionnalité Comptabilité ──
+        if ($request->role === 'comptable' && ! $tenant?->hasFeature('accounting')) {
+            return response()->json([
+                'message' => 'La comptabilité n\'est pas activée sur votre abonnement.',
+                'code'    => 'FEATURE_DISABLED',
+            ], 403);
+        }
+
+        // ── Limite d'utilisateurs du pack ──
+        $maxUsers = (int) ($tenant->getPlanLimits()['users'] ?? -1);
+        if ($maxUsers !== -1 && $tenant->users()->count() >= $maxUsers) {
+            return response()->json([
+                'success' => false,
+                'message' => "Limite atteinte : votre pack autorise {$maxUsers} utilisateur" . ($maxUsers > 1 ? 's' : '') . ". Passez à un pack supérieur pour inviter plus de membres.",
+                'code'    => 'PLAN_LIMIT_USERS',
+            ], 422);
+        }
+
         $result = $this->teamService->invite($tenant, $request->only('name', 'email', 'role'), $request->user());
 
         return response()->json([
@@ -52,7 +71,7 @@ class TeamController extends Controller
     public function updateRole(Request $request, User $user): JsonResponse
     {
         $request->validate([
-            'role' => ['required', Rule::in(['admin', 'employee', 'viewer'])],
+            'role' => ['required', Rule::in(['admin', 'employee', 'viewer', 'comptable'])],
         ]);
 
         $tenant  = $request->user()->tenant;
@@ -87,6 +106,7 @@ class TeamController extends Controller
             ->where('user_id', $user->id)
             ->where('tenant_id', $tenant->id)
             ->where('status', '!=', 'cancelled')
+            ->whereNull('deleted_at')
             ->selectRaw('DATE_FORMAT(created_at, "%Y-%m") as month, SUM(total_amount) as total')
             ->groupBy('month')
             ->get()
@@ -105,12 +125,14 @@ class TeamController extends Controller
             ->where('user_id', $user->id)
             ->where('tenant_id', $tenant->id)
             ->where('status', '!=', 'cancelled')
+            ->whereNull('deleted_at')
             ->sum('total_amount');
 
         $totalOrdersCount = \Illuminate\Support\Facades\DB::table('orders')
             ->where('user_id', $user->id)
             ->where('tenant_id', $tenant->id)
             ->where('status', '!=', 'cancelled')
+            ->whereNull('deleted_at')
             ->count();
 
         $totalPurchaseAmount = \Illuminate\Support\Facades\DB::table('purchase_orders')
@@ -141,6 +163,26 @@ class TeamController extends Controller
                     'created_at' => $log->created_at->toIso8601String(),
                 ]),
             ],
+        ]);
+    }
+
+    public function updatePermissions(Request $request, User $user): JsonResponse
+    {
+        $tenant = $request->user()->tenant;
+        abort_unless($request->user()->isTenantAdmin(), 403, 'Seul un admin peut modifier les permissions.');
+        abort_unless($user->tenant_id === $tenant->id, 403);
+        abort_if($user->isTenantAdmin(), 422, 'Impossible de modifier les permissions d\'un admin.');
+
+        $request->validate([
+            'permissions' => 'required|array',
+        ]);
+
+        $user->update(['module_permissions' => $request->permissions]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Permissions mises à jour.',
+            'data'    => ['permissions' => $user->module_permissions],
         ]);
     }
 

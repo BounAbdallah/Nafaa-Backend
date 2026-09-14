@@ -23,8 +23,11 @@ class CustomerResource extends JsonResource
             'country'      => $this->country,
             'country_label'=> \App\Models\Customer::countries()[$this->country] ?? $this->country,
             'notes'        => $this->notes,
-            'total_spent'  => $this->total_spent,
-            'orders_count' => $this->orders_count,
+            'total_spent'     => $this->total_spent,
+            'account_balance' => (float) ($this->account_balance ?? 0),
+            'debt'            => $this->debt,
+            'deposit'         => $this->deposit,
+            'orders_count'    => $this->orders_count,
             'recent_orders' => $this->relationLoaded('orders') 
                 ? $this->orders->take(5)->map(fn($o) => [
                     'id' => $o->id,
