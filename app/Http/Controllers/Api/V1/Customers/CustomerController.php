@@ -61,7 +61,8 @@ class CustomerController extends Controller
             'address' => 'nullable|string',
             'city'    => 'nullable|string|max:100',
             'country' => ['nullable', Rule::in(array_keys(Customer::countries()))],
-            'notes'   => 'nullable|string',
+            'notes'    => 'nullable|string',
+            'vat_rate' => 'nullable|numeric|min:0|max:100',
         ]);
 
         $customer = Customer::create([
@@ -98,8 +99,9 @@ class CustomerController extends Controller
             'address' => 'nullable|string',
             'city'    => 'nullable|string|max:100',
             'country' => ['nullable', Rule::in(array_keys(Customer::countries()))],
-            'notes'   => 'nullable|string',
+            'notes'    => 'nullable|string',
             'is_active' => 'boolean',
+            'vat_rate' => 'nullable|numeric|min:0|max:100',
         ]);
 
         $customer->update($data);

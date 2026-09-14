@@ -41,8 +41,10 @@ class TenantResource extends JsonResource
             'db_size'         => number_format(($this->id * 3.4) + 12, 1) . ' MB',
             'plan_expires_at' => $this->plan_expires_at?->toIso8601String(),
             'trial_ends_at'   => $this->trial_ends_at?->toIso8601String(),
-            'settings'        => $this->settings ?? [],
-            'created_at'      => $this->created_at->toIso8601String(),
+            'settings'         => $this->settings ?? [],
+            'default_vat_rate' => (float) ($this->default_vat_rate ?? 0),
+            'vat_number'       => $this->vat_number,
+            'created_at'       => $this->created_at->toIso8601String(),
         ];
     }
 }

@@ -37,6 +37,7 @@ class CustomerResource extends JsonResource
                     'created_at' => $o->created_at->toIso8601String(),
                 ])
                 : [],
+            'vat_rate'     => $this->vat_rate !== null ? (float) $this->vat_rate : null,
             'is_active'    => $this->is_active,
             'created_at'   => $this->created_at->toIso8601String(),
             'updated_at'   => $this->updated_at->toIso8601String(),

@@ -56,16 +56,18 @@ class SettingsController extends Controller
         }
 
         $data = $request->validate([
-            'name'     => 'required|string|max:255',
-            'industry' => 'required|string|max:100',
-            'logo'     => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
-            'ninea'    => 'nullable|string|max:100',
-            'rc'       => 'nullable|string|max:100',
-            'address'  => 'nullable|string|max:255',
-            'phone'    => 'nullable|string|max:50',
-            'email'    => 'nullable|email|max:255',
-            'country'  => 'nullable|string|max:10',
-            'currency' => 'nullable|string|max:10',
+            'name'             => 'required|string|max:255',
+            'industry'         => 'required|string|max:100',
+            'logo'             => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            'ninea'            => 'nullable|string|max:100',
+            'rc'               => 'nullable|string|max:100',
+            'address'          => 'nullable|string|max:255',
+            'phone'            => 'nullable|string|max:50',
+            'email'            => 'nullable|email|max:255',
+            'country'          => 'nullable|string|max:10',
+            'currency'         => 'nullable|string|max:10',
+            'default_vat_rate' => 'nullable|numeric|min:0|max:100',
+            'vat_number'       => 'nullable|string|max:100',
         ]);
 
         if ($request->hasFile('logo')) {
@@ -78,7 +80,9 @@ class SettingsController extends Controller
 
         $tenant->name = $data['name'];
         $tenant->industry = $data['industry'];
-        
+        $tenant->default_vat_rate = $data['default_vat_rate'] ?? 0;
+        $tenant->vat_number = $data['vat_number'] ?? null;
+
         $settings = $tenant->settings ?? [];
         $settings['ninea']    = $data['ninea']    ?? null;
         $settings['rc']       = $data['rc']       ?? null;
