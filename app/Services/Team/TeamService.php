@@ -63,10 +63,12 @@ class TeamService
 
         $role = $data['role'] ?? 'employee';
 
-        // S'assurer que le rôle comptable existe et appliquer ses permissions
+        // Appliquer les permissions par défaut selon le rôle
         if ($role === 'comptable') {
             \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'comptable', 'guard_name' => 'sanctum']);
             $user->update(['module_permissions' => User::comptablePermissions()]);
+        } elseif ($role === 'employee' && empty($user->module_permissions)) {
+            $user->update(['module_permissions' => User::defaultEmployeePermissions()]);
         }
 
         $user->syncRoles([$role]);
